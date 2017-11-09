@@ -87,6 +87,8 @@ typedef struct {
     TPMVersion be_tpm_version;
 
     size_t be_buffer_size;
+
+    bool deliver_response; /* whether to deliver response after VM resume */
 } SPAPRvTPMState;
 
 static void tpm_spapr_show_buffer(const unsigned char *buffer,
@@ -256,6 +258,12 @@ static void tpm_spapr_request_completed(TPMIf *ti, int ret)
     uint32_t len;
     int rc;
 
+    if (runstate_check(RUN_STATE_FINISH_MIGRATE)) {
+        /* defer delivery of response until .post_load */
+        s->deliver_response |= true;
+        return;
+    }
+
     s->state = SPAPR_VTPM_STATE_COMPLETION;
 
     /* a max. of be_buffer_size bytes can be transported */
@@ -316,6 +324,7 @@ static void tpm_spapr_reset(SpaprVioDevice *dev)
     SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
 
     s->state = SPAPR_VTPM_STATE_NONE;
+    s->deliver_response = false;
 
     s->be_tpm_version = tpm_backend_get_tpm_version(s->be_driver);
     tpm_spapr_update_deviceclass(dev);
@@ -339,9 +348,53 @@ static enum TPMVersion tpm_spapr_get_version(TPMIf *ti)
     return tpm_backend_get_tpm_version(s->be_driver);
 }
 
+/* persistent state handling */
+
+static int tpm_spapr_pre_save(void *opaque)
+{
+    SPAPRvTPMState *s = opaque;
+
+    s->deliver_response |= tpm_backend_finish_sync(s->be_driver);
+
+    trace_tpm_spapr_pre_save(s->deliver_response);
+    /*
+     * we cannot deliver the results to the VM since DMA would touch VM memory
+     */
+
+    return 0;
+}
+
+static int tpm_spapr_post_load(void *opaque, int version_id)
+{
+    SPAPRvTPMState *s = opaque;
+
+    if (s->deliver_response) {
+        trace_tpm_spapr_post_load();
+        /* deliver the results to the VM via DMA */
+        tpm_spapr_request_completed(TPM_IF(s), 0);
+        s->deliver_response = false;
+    }
+
+    return 0;
+}
+
 static const VMStateDescription vmstate_spapr_vtpm = {
     .name = "tpm-spapr",
-    .unmigratable = 1,
+    .version_id = 1,
+    .minimum_version_id = 0,
+    .minimum_version_id_old = 0,
+    .pre_save = tpm_spapr_pre_save,
+    .post_load = tpm_spapr_post_load,
+    .fields = (VMStateField[]) {
+        VMSTATE_SPAPR_VIO(vdev, SPAPRvTPMState),
+
+        VMSTATE_UINT8(state, SPAPRvTPMState),
+        VMSTATE_BUFFER(buffer, SPAPRvTPMState),
+        /* remember DMA address */
+        VMSTATE_UINT32(crq.s.data, SPAPRvTPMState),
+        VMSTATE_BOOL(deliver_response, SPAPRvTPMState),
+        VMSTATE_END_OF_LIST(),
+    }
 };
 
 static Property tpm_spapr_properties[] = {
