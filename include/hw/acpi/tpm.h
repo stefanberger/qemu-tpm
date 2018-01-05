@@ -31,4 +31,21 @@
 
 #define TPM2_START_METHOD_MMIO      6
 
+/*
+ * Physical Presence Interface -- shared with the BIOS
+ */
+#define TCG_MAGIC 0x41504354
+
+struct tpm_ppi {
+    uint32_t sign;           // TCG_MAGIC
+    uint16_t size;           // number of subsequent bytes for ACPI to access
+    uint8_t  opcode;         // set by ACPI
+    uint8_t  failure;        // set by BIOS (0 = success)
+    uint8_t  recent_opcode;  // set by BIOS
+    uint32_t response;       // set by BIOS
+    uint8_t  next_step;      // BIOS only
+} QEMU_PACKED;
+
+#define TPM_PPI_STRUCT_SIZE  14
+
 #endif /* HW_ACPI_TPM_H */
