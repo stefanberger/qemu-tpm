@@ -1860,9 +1860,275 @@ static Aml *build_q35_osc_method(void)
 }
 
 static void
+build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
+{
+    Aml *method, *field, *ifctx, *ifctx2, *ifctx3, *pak;
+
+    aml_append(dev, aml_name_decl("FOOB", aml_int(0xfed40fa0)));
+
+    aml_append(dev,
+               aml_operation_region("HIGH", AML_SYSTEM_MEMORY, aml_name("FOOB"),
+                                    TPM_PPI_STRUCT_SIZE));
+
+    field = aml_field("HIGH", AML_ANY_ACC, AML_NOLOCK, AML_PRESERVE);
+    aml_append(field, aml_named_field("SIG1",
+               sizeof(uint32_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("SIZE",
+               sizeof(uint16_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("CODE",
+               sizeof(uint8_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("SUCC",
+               sizeof(uint8_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("CODO",
+               sizeof(uint8_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("RESP",
+               sizeof(uint8_t) * BITS_PER_BYTE));
+    aml_append(dev, field);
+
+    /*
+     * Write the given operations code into 'CODE'.
+     */
+    method = aml_method("WRAM", 1, AML_SERIALIZED);
+    {
+        ifctx = aml_if(
+                  aml_and(
+                    aml_equal(aml_name("SIG1"), aml_int(TCG_MAGIC)),
+                    aml_lgreater_equal(aml_name("SIZE"), aml_int(1)),
+                    NULL
+                 )
+               );
+        {
+            aml_append(ifctx, aml_store(aml_arg(0), aml_name("CODE")));
+            /* 0 = Success */
+            aml_append(ifctx, aml_return(aml_int(0)));
+        }
+        aml_append(method, ifctx);
+        /* 1 = Operation Value not supported */
+        aml_append(method, aml_return(aml_int(1)));
+    }
+    aml_append(dev, method);
+
+    /*
+     * Read data. The returned package is the same as 'function 5'
+     * returns to the OS.
+     */
+    method = aml_method("RRAM", 0, AML_SERIALIZED);
+    {
+        pak = aml_package(3);
+
+        //aml_append(method, aml_store(aml_name("FOOX"), aml_name("SIG1")));
+
+        ifctx = aml_if(
+                  aml_and(
+                    aml_equal(aml_name("SIG1"), aml_int(TCG_MAGIC)),
+                    aml_lgreater_equal(aml_name("SIZE"), aml_int(7)),
+                    NULL
+                  )
+                );
+        {
+            aml_append(pak, aml_name("SUCC"));
+            aml_append(pak, aml_name("CODO"));
+            aml_append(pak, aml_name("RESP"));
+        }
+        aml_append(method, ifctx);
+
+        aml_append(method, aml_return(pak));
+    }
+    aml_append(dev, method);
+
+    /*
+     * CKOP: Check whether the opcode is valid
+     */
+    if (tpm_version == TPM_VERSION_1_2) {
+        method = aml_method("CKOP", 1, AML_NOTSERIALIZED);
+        {
+            ifctx = aml_if(
+                      aml_or(
+                        aml_or(
+                          aml_and(
+                            aml_lgreater_equal(aml_arg(0), aml_int(0)),
+                            aml_lless_equal(aml_arg(0), aml_int(11)),
+                            NULL
+                          ),
+                          aml_equal(aml_arg(0), aml_int(14)),
+                          NULL
+                        ),
+                        aml_and(
+                          aml_lgreater_equal(aml_arg(0), aml_int(21)),
+                          aml_lless_equal(aml_arg(0), aml_int(22)),
+                          NULL
+                       ),
+                       NULL
+                      )
+                    );
+            {
+                aml_append(ifctx, aml_return(aml_int(1)));
+            }
+            aml_append(method, ifctx);
+
+            aml_append(method, aml_return(aml_int(0)));
+        }
+    } else {
+        method = aml_method("CKOP", 1, AML_NOTSERIALIZED);
+        {
+            ifctx = aml_if(
+                      aml_equal(aml_arg(0), aml_int(0))
+                    );
+            {
+                aml_append(ifctx, aml_return(aml_int(1)));
+            }
+            aml_append(method, ifctx);
+
+            aml_append(method, aml_return(aml_int(0)));
+        }
+    }
+    aml_append(dev, method);
+
+    method = aml_method("_DSM", 4, AML_SERIALIZED);
+    {
+        uint8_t zerobyte[1] = { 0 };
+
+        ifctx = aml_if(
+                  aml_equal(aml_arg(0),
+                            aml_touuid("3DDDFAA6-361B-4EB4-A424-8D10089D1653"))
+                );
+        {
+            aml_append(ifctx,
+                       aml_store(aml_to_integer(aml_arg(2)), aml_local(0)));
+
+            /* standard DSM query function */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(0)));
+            {
+                uint8_t byte_list[2] = { 0xff, 0x01 };
+                aml_append(ifctx2, aml_return(aml_buffer(2, byte_list)));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* interface version: 1.2 */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(1)));
+            {
+                aml_append(ifctx2, aml_return(aml_string("1.2")));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* submit TPM operation */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(2)));
+            {
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_arg(3),
+                                                           aml_int(0))),
+                                     aml_local(0)));
+                ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
+                {
+                    aml_append(ifctx3,
+                               aml_return(aml_call1("WRAM", aml_local(0))));
+                }
+                aml_append(ifctx2, ifctx3);
+                aml_append(ifctx2, aml_return(aml_int(1)));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* get pending TPM operation */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(3)));
+            {
+                pak = aml_package(2);
+                aml_append(pak, aml_int(0));
+                aml_append(pak, aml_name("CODE"));
+                aml_append(ifctx2, aml_return(pak));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* get platform-specific action to transition to pre-OS env. */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(4)));
+            {
+                /* 2 = reboot */
+                aml_append(ifctx2, aml_return(aml_int(2)));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* get TPM operation response */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(5)));
+            {
+                aml_append(ifctx2, aml_return(aml_call0("RRAM")));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* submit preferred user language */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(6)));
+            {
+                /* 3 = not implemented */
+                aml_append(ifctx2, aml_return(aml_int(3)));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* submit TPM operation v2 */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(7)));
+            {
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_arg(3),
+                                                           aml_int(0))),
+                                     aml_local(0)));
+                ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
+                {
+                    aml_append(ifctx3,
+                               aml_store(aml_call1("WRAM", aml_local(0)),
+                                         aml_local(1)));
+                    aml_append(ifctx3, aml_return(aml_local(1)));
+                }
+                aml_append(ifctx2, ifctx3);
+                /* 1 = requested operation not implemented */
+                aml_append(ifctx2, aml_return(aml_int(1)));
+            }
+            aml_append(ifctx, ifctx2);
+
+            /* get user confirmation status for operation */
+            ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(8)));
+            {
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_arg(3),
+                                                           aml_int(0))),
+                                     aml_local(0)));
+                ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
+                {
+                    /* 4 = Allowed and physically present user not required */
+                    aml_append(ifctx3, aml_return(aml_int(4)));
+                }
+                aml_append(ifctx2, ifctx3);
+                /* 0 = requested operation not implemented */
+                aml_append(ifctx2, aml_return(aml_int(0)));
+            }
+            aml_append(ifctx, ifctx2);
+
+            aml_append(ifctx, aml_return(aml_buffer(1, zerobyte)));
+        }
+        aml_append(method, ifctx);
+    }
+    aml_append(dev, method);
+}
+
+/*
+ * Build the ACPI variable that will hold the address used for
+ * OperationRegion() and have it assigned dynamically allocated memory.
+ */
+static void
+build_tpm_ppi_post(GArray *table_data, BIOSLinker *linker, GArray *tpmppi,
+                   int mem_addr_offset)
+{
+    acpi_data_push(tpmppi, sizeof(struct tpm_ppi));
+
+    bios_linker_loader_alloc(linker, ACPI_BUILD_TPMPPI_FILE, tpmppi, 1,
+                             false /* high memory */);
+
+    bios_linker_loader_add_pointer(linker,
+        ACPI_BUILD_TABLE_FILE, mem_addr_offset, sizeof(uint32_t),
+        ACPI_BUILD_TPMPPI_FILE, 0);
+}
+
+static void
 build_dsdt(GArray *table_data, BIOSLinker *linker,
            AcpiPmInfo *pm, AcpiMiscInfo *misc,
-           Range *pci_hole, Range *pci_hole64, MachineState *machine)
+           Range *pci_hole, Range *pci_hole64, MachineState *machine,
+           GArray *tpmppi)
 {
     CrsRangeEntry *entry;
     Aml *dsdt, *sb_scope, *scope, *dev, *method, *field, *pkg, *crs;
@@ -1873,11 +2139,15 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     int root_bus_limit = 0xFF;
     PCIBus *bus = NULL;
     int i;
+    int mem_addr_offset;
 
     dsdt = init_aml_allocator();
 
     /* Reserve space for header */
     acpi_data_push(dsdt->buf, sizeof(AcpiTableHeader));
+
+    /* this variable will hold the address for OperationRegion() */
+    mem_addr_offset = table_data->len + build_append_named_dword(dsdt->buf, "FOOX");
 
     build_dbg_aml(dsdt);
     if (misc->is_piix4) {
@@ -2218,6 +2488,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
                  */
                 /* aml_append(crs, aml_irq_no_flags(TPM_TIS_IRQ)); */
                 aml_append(dev, aml_name_decl("_CRS", crs));
+                build_tpm_ppi(dev, misc->tpm_version);
                 aml_append(scope, dev);
             }
 
@@ -2228,6 +2499,9 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
 
     /* copy AML table into ACPI tables blob and patch header there */
     g_array_append_vals(table_data, dsdt->buf->data, dsdt->buf->len);
+
+    build_tpm_ppi_post(table_data, linker, tpmppi, mem_addr_offset);
+
     build_header(linker, table_data,
         (void *)(table_data->data + table_data->len - dsdt->buf->len),
         "DSDT", dsdt->buf->len, 1, NULL, NULL);
@@ -2425,6 +2699,22 @@ build_srat(GArray *table_data, BIOSLinker *linker, MachineState *machine)
                  (void *)(table_data->data + srat_start),
                  "SRAT",
                  table_data->len - srat_start, 1, NULL, NULL);
+}
+
+static void
+build_qemu(GArray *table_data, BIOSLinker *linker, TPMVersion tpm_version)
+{
+    AcpiTableQemu *qemu = acpi_data_push(table_data, sizeof(*qemu));
+    unsigned tpmppi_addr_offset = (char *)&qemu->tpmppi_addr - table_data->data;
+
+    if (tpm_version != TPM_VERSION_UNSPEC) {
+        bios_linker_loader_add_pointer(linker,
+            ACPI_BUILD_TABLE_FILE, tpmppi_addr_offset, sizeof(uint64_t),
+            ACPI_BUILD_TPMPPI_FILE, 0);
+    }
+
+    build_header(linker, table_data,
+                 (void *)qemu, "QEMU", sizeof(*qemu), 1, NULL, NULL);
 }
 
 static void
@@ -2670,7 +2960,8 @@ void acpi_build(AcpiBuildTables *tables, MachineState *machine)
     /* DSDT is pointed to by FADT */
     dsdt = tables_blob->len;
     build_dsdt(tables_blob, tables->linker, &pm, &misc,
-               &pci_hole, &pci_hole64, machine);
+               &pci_hole, &pci_hole64, machine,
+               tables->tpmppi);
 
     /* Count the size of the DSDT and SSDT, we will need it for legacy
      * sizing of ACPI tables.
@@ -2719,6 +3010,12 @@ void acpi_build(AcpiBuildTables *tables, MachineState *machine)
         acpi_add_table(table_offsets, tables_blob);
         build_mcfg_q35(tables_blob, tables->linker, &mcfg);
     }
+
+    if (misc.tpm_version != TPM_VERSION_UNSPEC) {
+        acpi_add_table(table_offsets, tables_blob);
+        build_qemu(tables_blob, tables->linker, misc.tpm_version);
+    }
+
     if (x86_iommu_get_default()) {
         IommuType IOMMUType = x86_iommu_get_type();
         if (IOMMUType == TYPE_AMD) {
@@ -2907,6 +3204,9 @@ void acpi_setup(void)
 
     fw_cfg_add_file(pcms->fw_cfg, ACPI_BUILD_TPMLOG_FILE,
                     tables.tcpalog->data, acpi_data_len(tables.tcpalog));
+
+    fw_cfg_add_file(pcms->fw_cfg, ACPI_BUILD_TPMPPI_FILE,
+                    tables.tpmppi->data, acpi_data_len(tables.tpmppi));
 
     vmgenid_dev = find_vmgenid_dev();
     if (vmgenid_dev) {

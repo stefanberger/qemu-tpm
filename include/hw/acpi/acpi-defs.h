@@ -538,6 +538,7 @@ struct AcpiTableMcfg {
     ACPI_TABLE_HEADER_DEF;
     uint8_t reserved[8];
     AcpiMcfgAllocation allocation[0];
+    uint64_t tpmppi_addr;
 } QEMU_PACKED;
 typedef struct AcpiTableMcfg AcpiTableMcfg;
 
@@ -572,6 +573,13 @@ struct Acpi20TPM2 {
     uint64_t log_area_start_address;
 } QEMU_PACKED;
 typedef struct Acpi20TPM2 Acpi20TPM2;
+
+struct AcpiTableQemu {
+    ACPI_TABLE_HEADER_DEF
+    uint8_t reserved[32];
+    uint64_t tpmppi_addr;
+} QEMU_PACKED;
+typedef struct AcpiTableQemu AcpiTableQemu;
 
 /* DMAR - DMA Remapping table r2.2 */
 struct AcpiTableDmar {

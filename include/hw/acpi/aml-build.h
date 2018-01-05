@@ -13,6 +13,7 @@
 #define ACPI_BUILD_TABLE_FILE "etc/acpi/tables"
 #define ACPI_BUILD_RSDP_FILE "etc/acpi/rsdp"
 #define ACPI_BUILD_TPMLOG_FILE "etc/tpm/log"
+#define ACPI_BUILD_TPMPPI_FILE "etc/tpm/ppi"
 
 #define AML_NOTIFY_METHOD "NTFY"
 
@@ -210,6 +211,7 @@ struct AcpiBuildTables {
     GArray *table_data;
     GArray *rsdp;
     GArray *tcpalog;
+    GArray *tpmppi;
     GArray *vmgenid;
     BIOSLinker *linker;
 } AcpiBuildTables;
