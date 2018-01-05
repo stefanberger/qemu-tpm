@@ -88,4 +88,34 @@ REG32(CRB_DATA_BUFFER, 0x80)
 #define TPM_PPI_ADDR_SIZE           0x400
 #define TPM_PPI_ADDR_BASE           0xFED45000
 
+struct tpm_ppi {
+    uint8_t  func[256];      /* 0x000: per TPM function implementation flags;
+                                       set by BIOS */
+/* actions OS should take to transition to the pre-OS env.; bits 0, 1 */
+#define TPM_PPI_FUNC_ACTION_SHUTDOWN   (1 << 0)
+#define TPM_PPI_FUNC_ACTION_REBOOT     (2 << 0)
+#define TPM_PPI_FUNC_ACTION_VENDOR     (3 << 0)
+#define TPM_PPI_FUNC_ACTION_MASK       (3 << 0)
+/* whether function is blocked by BIOS settings; bits 2, 3, 4 */
+#define TPM_PPI_FUNC_NOT_IMPLEMENTED     (0 << 2)
+#define TPM_PPI_FUNC_BIOS_ONLY           (1 << 2)
+#define TPM_PPI_FUNC_BLOCKED             (2 << 2)
+#define TPM_PPI_FUNC_ALLOWED_USR_REQ     (3 << 2)
+#define TPM_PPI_FUNC_ALLOWED_USR_NOT_REQ (4 << 2)
+#define TPM_PPI_FUNC_MASK                (7 << 2)
+    uint8_t ppin;            /* 0x100 : set by BIOS */
+    uint32_t ppip;           /* 0x101 : set by ACPI; not used */
+    uint32_t pprp;           /* 0x105 : response from TPM; set by BIOS */
+    uint32_t pprq;           /* 0x109 : opcode; set by ACPI */
+    uint32_t pprm;           /* 0x10d : parameter for opcode; set by ACPI */
+    uint32_t lppr;           /* 0x111 : last opcode; set by BIOS */
+    uint32_t fret;           /* 0x115 : set by ACPI; not used */
+    uint8_t res1[0x40];      /* 0x119 : reserved for future use */
+    uint8_t next_step;       /* 0x159 : next step after reboot; set by BIOS */
+} QEMU_PACKED;
+
+#define TPM_PPI_STRUCT_SIZE  sizeof(struct tpm_ppi)
+
+#define TPM_PPI_VERSION_1_30 1
+
 #endif /* HW_ACPI_TPM_H */
