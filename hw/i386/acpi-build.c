@@ -1864,10 +1864,8 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
 {
     Aml *method, *field, *ifctx, *ifctx2, *ifctx3, *pak;
 
-    aml_append(dev, aml_name_decl("FOOB", aml_int(0xfed40fa0)));
-
     aml_append(dev,
-               aml_operation_region("HIGH", AML_SYSTEM_MEMORY, aml_name("FOOB"),
+               aml_operation_region("HIGH", AML_SYSTEM_MEMORY, aml_name("TPPI"),
                                     TPM_PPI_STRUCT_SIZE));
 
     field = aml_field("HIGH", AML_ANY_ACC, AML_NOLOCK, AML_PRESERVE);
@@ -1915,8 +1913,6 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
     method = aml_method("RRAM", 0, AML_SERIALIZED);
     {
         pak = aml_package(3);
-
-        //aml_append(method, aml_store(aml_name("FOOX"), aml_name("SIG1")));
 
         ifctx = aml_if(
                   aml_and(
@@ -2147,7 +2143,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     acpi_data_push(dsdt->buf, sizeof(AcpiTableHeader));
 
     /* this variable will hold the address for OperationRegion() */
-    mem_addr_offset = table_data->len + build_append_named_dword(dsdt->buf, "FOOX");
+    mem_addr_offset = table_data->len + build_append_named_dword(dsdt->buf, "TPPI");
 
     build_dbg_aml(dsdt);
     if (misc->is_piix4) {
