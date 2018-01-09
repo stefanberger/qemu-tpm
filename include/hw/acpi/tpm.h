@@ -37,15 +37,15 @@
 #define TCG_MAGIC 0x41504354
 
 struct tpm_ppi {
-    uint32_t sign;           // TCG_MAGIC
-    uint16_t size;           // number of subsequent bytes for ACPI to access
-    uint8_t  opcode;         // set by ACPI
-    uint8_t  failure;        // set by BIOS (0 = success)
-    uint8_t  recent_opcode;  // set by BIOS
-    uint32_t response;       // set by BIOS
-    uint8_t  next_step;      // BIOS only
+    uint8_t ppin;            // set by BIOS
+    uint32_t pprq;           // opcode; set by ACPI
+    uint32_t succ;           // set by BIOS (0 = success)
+    uint32_t lppr;           // last opcode; set by BIOS
+    uint32_t pprp;           // response from TPM; set by BIOS
+    uint32_t pprm;           // parameter for opcode; set by ACPI
+    uint8_t next_step;       // BIOS only
 } QEMU_PACKED;
 
-#define TPM_PPI_STRUCT_SIZE  14
+#define TPM_PPI_STRUCT_SIZE  sizeof(struct tpm_ppi)
 
 #endif /* HW_ACPI_TPM_H */

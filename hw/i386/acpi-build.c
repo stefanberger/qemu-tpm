@@ -1871,40 +1871,29 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
                                     TPM_PPI_STRUCT_SIZE));
 
     field = aml_field("HIGH", AML_ANY_ACC, AML_NOLOCK, AML_PRESERVE);
-    aml_append(field, aml_named_field("SIG1",
+    aml_append(field, aml_named_field("PPIN",
+               sizeof(uint8_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("PPRQ",
                sizeof(uint32_t) * BITS_PER_BYTE));
-    aml_append(field, aml_named_field("SIZE",
-               sizeof(uint16_t) * BITS_PER_BYTE));
-    aml_append(field, aml_named_field("CODE",
-               sizeof(uint8_t) * BITS_PER_BYTE));
     aml_append(field, aml_named_field("SUCC",
-               sizeof(uint8_t) * BITS_PER_BYTE));
-    aml_append(field, aml_named_field("CODO",
-               sizeof(uint8_t) * BITS_PER_BYTE));
-    aml_append(field, aml_named_field("RESP",
-               sizeof(uint8_t) * BITS_PER_BYTE));
+               sizeof(uint32_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("LPPR",
+               sizeof(uint32_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("PPRP",
+               sizeof(uint32_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("PPRM",
+               sizeof(uint32_t) * BITS_PER_BYTE));
     aml_append(dev, field);
 
     /*
-     * Write the given operations code into 'CODE'.
+     * Write the given operations code into 'PPRQ'.
      */
-    method = aml_method("WRAM", 1, AML_SERIALIZED);
+    method = aml_method("WRAM", 2, AML_SERIALIZED);
     {
-        ifctx = aml_if(
-                  aml_and(
-                    aml_equal(aml_name("SIG1"), aml_int(TCG_MAGIC)),
-                    aml_lgreater_equal(aml_name("SIZE"), aml_int(1)),
-                    NULL
-                 )
-               );
-        {
-            aml_append(ifctx, aml_store(aml_arg(0), aml_name("CODE")));
-            /* 0 = Success */
-            aml_append(ifctx, aml_return(aml_int(0)));
-        }
-        aml_append(method, ifctx);
-        /* 1 = Operation Value not supported */
-        aml_append(method, aml_return(aml_int(1)));
+        aml_append(method, aml_store(aml_arg(0), aml_name("PPRQ")));
+        aml_append(method, aml_store(aml_arg(1), aml_name("PPRM")));
+        /* 0 = Success */
+        aml_append(method, aml_return(aml_int(0)));
     }
     aml_append(dev, method);
 
@@ -1916,19 +1905,9 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
     {
         pak = aml_package(3);
 
-        ifctx = aml_if(
-                  aml_and(
-                    aml_equal(aml_name("SIG1"), aml_int(TCG_MAGIC)),
-                    aml_lgreater_equal(aml_name("SIZE"), aml_int(7)),
-                    NULL
-                  )
-                );
-        {
-            aml_append(pak, aml_name("SUCC"));
-            aml_append(pak, aml_name("CODO"));
-            aml_append(pak, aml_name("RESP"));
-        }
-        aml_append(method, ifctx);
+        aml_append(pak, aml_name("SUCC"));
+        aml_append(pak, aml_name("LPPR"));
+        aml_append(pak, aml_name("PPRP"));
 
         aml_append(method, aml_return(pak));
     }
@@ -2019,7 +1998,9 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
                 ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
                 {
                     aml_append(ifctx3,
-                               aml_return(aml_call1("WRAM", aml_local(0))));
+                               aml_return(aml_call2("WRAM",
+                                                    aml_local(0),
+                                                    aml_int(0))));
                 }
                 aml_append(ifctx2, ifctx3);
                 aml_append(ifctx2, aml_return(aml_int(1)));
@@ -2031,7 +2012,7 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
             {
                 pak = aml_package(2);
                 aml_append(pak, aml_int(0));
-                aml_append(pak, aml_name("CODE"));
+                aml_append(pak, aml_name("PPRQ"));
                 aml_append(ifctx2, aml_return(pak));
             }
             aml_append(ifctx, ifctx2);
@@ -2047,7 +2028,13 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
             /* get TPM operation response */
             ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(5)));
             {
-                aml_append(ifctx2, aml_return(aml_call0("RRAM")));
+                pak = aml_package(3);
+
+                aml_append(pak, aml_name("SUCC"));
+                aml_append(pak, aml_name("LPPR"));
+                aml_append(pak, aml_name("PPRP"));
+
+                aml_append(ifctx2, aml_return(pak));
             }
             aml_append(ifctx, ifctx2);
 
@@ -2069,7 +2056,9 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
                 ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
                 {
                     aml_append(ifctx3,
-                               aml_store(aml_call1("WRAM", aml_local(0)),
+                               aml_store(aml_call2("WRAM",
+                                                   aml_local(0),
+                                                   aml_int(0)),
                                          aml_local(1)));
                     aml_append(ifctx3, aml_return(aml_local(1)));
                 }
