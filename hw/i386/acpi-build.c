@@ -42,6 +42,7 @@
 #include "hw/acpi/memory_hotplug.h"
 #include "sysemu/tpm.h"
 #include "hw/acpi/tpm.h"
+#include "hw/tpm/tpm_ppi.h"
 #include "hw/acpi/vmgenid.h"
 #include "sysemu/tpm_backend.h"
 #include "hw/timer/mc146818rtc_regs.h"
@@ -1865,7 +1866,8 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
     Aml *method, *field, *ifctx, *ifctx2, *ifctx3, *pak;
 
     aml_append(dev,
-               aml_operation_region("HIGH", AML_SYSTEM_MEMORY, aml_name("TPPI"),
+               aml_operation_region("HIGH", AML_SYSTEM_MEMORY,
+                                    aml_int(TPM_PPI_ADDR_BASE),
                                     TPM_PPI_STRUCT_SIZE));
 
     field = aml_field("HIGH", AML_ANY_ACC, AML_NOLOCK, AML_PRESERVE);
@@ -2102,24 +2104,6 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
     aml_append(dev, method);
 }
 
-/*
- * Build the ACPI variable that will hold the address used for
- * OperationRegion() and have it assigned dynamically allocated memory.
- */
-static void
-build_tpm_ppi_post(GArray *table_data, BIOSLinker *linker, GArray *tpmppi,
-                   int mem_addr_offset)
-{
-    acpi_data_push(tpmppi, sizeof(struct tpm_ppi));
-
-    bios_linker_loader_alloc(linker, ACPI_BUILD_TPMPPI_FILE, tpmppi, 1,
-                             false /* high memory */);
-
-    bios_linker_loader_add_pointer(linker,
-        ACPI_BUILD_TABLE_FILE, mem_addr_offset, sizeof(uint32_t),
-        ACPI_BUILD_TPMPPI_FILE, 0);
-}
-
 static void
 build_dsdt(GArray *table_data, BIOSLinker *linker,
            AcpiPmInfo *pm, AcpiMiscInfo *misc,
@@ -2135,15 +2119,11 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     int root_bus_limit = 0xFF;
     PCIBus *bus = NULL;
     int i;
-    int mem_addr_offset;
 
     dsdt = init_aml_allocator();
 
     /* Reserve space for header */
     acpi_data_push(dsdt->buf, sizeof(AcpiTableHeader));
-
-    /* this variable will hold the address for OperationRegion() */
-    mem_addr_offset = table_data->len + build_append_named_dword(dsdt->buf, "TPPI");
 
     build_dbg_aml(dsdt);
     if (misc->is_piix4) {
@@ -2496,8 +2476,6 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
     /* copy AML table into ACPI tables blob and patch header there */
     g_array_append_vals(table_data, dsdt->buf->data, dsdt->buf->len);
 
-    build_tpm_ppi_post(table_data, linker, tpmppi, mem_addr_offset);
-
     build_header(linker, table_data,
         (void *)(table_data->data + table_data->len - dsdt->buf->len),
         "DSDT", dsdt->buf->len, 1, NULL, NULL);
@@ -2695,22 +2673,6 @@ build_srat(GArray *table_data, BIOSLinker *linker, MachineState *machine)
                  (void *)(table_data->data + srat_start),
                  "SRAT",
                  table_data->len - srat_start, 1, NULL, NULL);
-}
-
-static void
-build_qemu(GArray *table_data, BIOSLinker *linker, TPMVersion tpm_version)
-{
-    AcpiTableQemu *qemu = acpi_data_push(table_data, sizeof(*qemu));
-    unsigned tpmppi_addr_offset = (char *)&qemu->tpmppi_addr - table_data->data;
-
-    if (tpm_version != TPM_VERSION_UNSPEC) {
-        bios_linker_loader_add_pointer(linker,
-            ACPI_BUILD_TABLE_FILE, tpmppi_addr_offset, sizeof(uint64_t),
-            ACPI_BUILD_TPMPPI_FILE, 0);
-    }
-
-    build_header(linker, table_data,
-                 (void *)qemu, "QEMU", sizeof(*qemu), 1, NULL, NULL);
 }
 
 static void
@@ -3005,11 +2967,6 @@ void acpi_build(AcpiBuildTables *tables, MachineState *machine)
     if (acpi_get_mcfg(&mcfg)) {
         acpi_add_table(table_offsets, tables_blob);
         build_mcfg_q35(tables_blob, tables->linker, &mcfg);
-    }
-
-    if (misc.tpm_version != TPM_VERSION_UNSPEC) {
-        acpi_add_table(table_offsets, tables_blob);
-        build_qemu(tables_blob, tables->linker, misc.tpm_version);
     }
 
     if (x86_iommu_get_default()) {
