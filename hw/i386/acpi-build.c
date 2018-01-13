@@ -1889,6 +1889,9 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
                sizeof(uint8_t) * BITS_PER_BYTE));
     aml_append(field, aml_named_field("RES2",
                sizeof(uint32_t) * BITS_PER_BYTE * 4));
+    aml_append(field, aml_reserved_field(0x6B0));
+    aml_append(field, aml_named_field("FUNC",
+               sizeof(uint8_t) * BITS_PER_BYTE * 256));
     aml_append(dev, field);
 
     /*
@@ -1906,48 +1909,13 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
     /*
      * CKOP: Check whether the opcode is valid
      */
-    if (tpm_version == TPM_VERSION_1_2) {
-        method = aml_method("CKOP", 1, AML_NOTSERIALIZED);
-        {
-            ifctx = aml_if(
-                      aml_or(
-                        aml_or(
-                          aml_and(
-                            aml_lgreater_equal(aml_arg(0), aml_int(0)),
-                            aml_lless_equal(aml_arg(0), aml_int(11)),
-                            NULL
-                          ),
-                          aml_equal(aml_arg(0), aml_int(14)),
-                          NULL
-                        ),
-                        aml_and(
-                          aml_lgreater_equal(aml_arg(0), aml_int(21)),
-                          aml_lless_equal(aml_arg(0), aml_int(22)),
-                          NULL
-                       ),
-                       NULL
-                      )
-                    );
-            {
-                aml_append(ifctx, aml_return(aml_int(1)));
-            }
-            aml_append(method, ifctx);
-
-            aml_append(method, aml_return(aml_int(0)));
-        }
-    } else {
-        method = aml_method("CKOP", 1, AML_NOTSERIALIZED);
-        {
-            ifctx = aml_if(
-                      aml_equal(aml_arg(0), aml_int(0))
-                    );
-            {
-                aml_append(ifctx, aml_return(aml_int(1)));
-            }
-            aml_append(method, ifctx);
-
-            aml_append(method, aml_return(aml_int(0)));
-        }
+    method = aml_method("CKOP", 1, AML_NOTSERIALIZED);
+    {
+        aml_append(method,
+                   aml_store(aml_derefof(aml_index(aml_name("FUNC"),
+                                                    aml_arg(0))),
+                             aml_local(0))
+                  );
     }
     aml_append(dev, method);
 
@@ -1981,19 +1949,33 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
             /* submit TPM operation */
             ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(2)));
             {
+                /* get opcode */
                 aml_append(ifctx2,
                            aml_store(aml_derefof(aml_index(aml_arg(3),
                                                            aml_int(0))),
                                      aml_local(0)));
-                ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
+                /* get opcode flags */
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_name("FUNC"),
+                                                           aml_local(0))),
+                                     aml_local(1)));
+                ifctx3 = aml_if(
+                              aml_equal(
+                                  aml_and(aml_local(1),
+                                          aml_int(TPM_PPI_FUNC_IMPLEMENTED),
+                                          NULL),
+                                  aml_int(0)
+                              )
+                         );
                 {
-                    aml_append(ifctx3,
-                               aml_return(aml_call2("WRAM",
-                                                    aml_local(0),
-                                                    aml_int(0))));
+                    /* 1: not implemented */
+                    aml_append(ifctx3, aml_return(aml_int(1)));
                 }
                 aml_append(ifctx2, ifctx3);
-                aml_append(ifctx2, aml_return(aml_int(1)));
+                aml_append(ifctx2, aml_store(aml_local(0), aml_name("PPRQ")));
+                aml_append(ifctx2, aml_store(aml_int(0), aml_name("PPRM")));
+                /* 0: success */
+                aml_append(ifctx2, aml_return(aml_int(0)));
             }
             aml_append(ifctx, ifctx2);
 
@@ -2010,8 +1992,24 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
             /* get platform-specific action to transition to pre-OS env. */
             ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(4)));
             {
-                /* 2 = reboot */
-                aml_append(ifctx2, aml_return(aml_int(2)));
+                /* get opcode */
+                aml_append(ifctx2,
+                           aml_store(aml_name("PPRQ"),
+                                     aml_local(0)));
+                /* get opcode flags */
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_name("FUNC"),
+                                                           aml_local(0))),
+                                     aml_local(1)));
+                /* return action flags */
+                aml_append(ifctx2,
+                           aml_return(
+                               aml_shiftright(
+                                   aml_and(aml_local(1),
+                                           aml_int(TPM_PPI_FUNC_ACTION_MASK),
+                                           NULL),
+                                   aml_int(1),
+                                   NULL)));
             }
             aml_append(ifctx, ifctx2);
 
@@ -2039,40 +2037,73 @@ build_tpm_ppi(Aml *dev, TPMVersion tpm_version)
             /* submit TPM operation v2 */
             ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(7)));
             {
+                /* get opcode */
                 aml_append(ifctx2,
                            aml_store(aml_derefof(aml_index(aml_arg(3),
                                                            aml_int(0))),
                                      aml_local(0)));
-                ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
+                /* get opcode flags */
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_name("FUNC"),
+                                                           aml_local(0))),
+                                     aml_local(1)));
+                ifctx3 = aml_if(
+                              aml_equal(
+                                  aml_and(aml_local(1),
+                                          aml_int(TPM_PPI_FUNC_MASK),
+                                          NULL),
+                                  aml_int(TPM_PPI_FUNC_NOT_IMPLEMENTED)
+                              )
+                         );
                 {
-                    aml_append(ifctx3,
-                               aml_store(aml_call2("WRAM",
-                                                   aml_local(0),
-                                                   aml_int(0)),
-                                         aml_local(1)));
-                    aml_append(ifctx3, aml_return(aml_local(1)));
+                    /* 1: not implemented */
+                    aml_append(ifctx3, aml_return(aml_int(1)));
                 }
                 aml_append(ifctx2, ifctx3);
-                /* 1 = requested operation not implemented */
-                aml_append(ifctx2, aml_return(aml_int(1)));
+
+                ifctx3 = aml_if(
+                              aml_equal(
+                                  aml_and(
+                                      aml_local(1),
+                                      aml_int(TPM_PPI_FUNC_MASK),
+                                      NULL),
+                                  aml_int(TPM_PPI_FUNC_BLOCKED)
+                              )
+                         );
+                {
+                    /* 3: blocked by firmware */
+                    aml_append(ifctx3, aml_return(aml_int(3)));
+                }
+                aml_append(ifctx2, ifctx3);
+                aml_append(ifctx2, aml_store(aml_local(0), aml_name("PPRQ")));
+                aml_append(ifctx2, aml_store(aml_int(0), aml_name("PPRM")));
+                /* 0: success */
+                aml_append(ifctx2, aml_return(aml_int(0)));
             }
             aml_append(ifctx, ifctx2);
 
             /* get user confirmation status for operation */
             ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(8)));
             {
+                /* get opcode */
                 aml_append(ifctx2,
                            aml_store(aml_derefof(aml_index(aml_arg(3),
                                                            aml_int(0))),
                                      aml_local(0)));
-                ifctx3 = aml_if(aml_call1("CKOP", aml_local(0)));
-                {
-                    /* 4 = Allowed and physically present user not required */
-                    aml_append(ifctx3, aml_return(aml_int(4)));
-                }
-                aml_append(ifctx2, ifctx3);
-                /* 0 = requested operation not implemented */
-                aml_append(ifctx2, aml_return(aml_int(0)));
+                /* get opcode flags */
+                aml_append(ifctx2,
+                           aml_store(aml_derefof(aml_index(aml_name("FUNC"),
+                                                           aml_local(0))),
+                                     aml_local(1)));
+                /* return confirmation status code */
+                aml_append(ifctx2,
+                           aml_return(
+                               aml_shiftright(
+                                   aml_and(aml_local(1),
+                                           aml_int(TPM_PPI_FUNC_MASK),
+                                           NULL),
+                                   aml_int(3),
+                                   NULL)));
             }
             aml_append(ifctx, ifctx2);
 
