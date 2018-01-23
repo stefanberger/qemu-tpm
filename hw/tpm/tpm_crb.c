@@ -28,6 +28,7 @@
 #include "sysemu/tpm_backend.h"
 #include "tpm_int.h"
 #include "tpm_util.h"
+#include "tpm_ppi.h"
 
 typedef struct CRBState {
     DeviceState parent_obj;
@@ -39,6 +40,8 @@ typedef struct CRBState {
     MemoryRegion cmdmem;
 
     size_t be_buffer_size;
+
+    TPMPPI ppi;
 } CRBState;
 
 #define CRB(obj) OBJECT_CHECK(CRBState, (obj), TYPE_TPM_CRB)
@@ -265,6 +268,8 @@ static void tpm_crb_realize(DeviceState *dev, Error **errp)
                             CRB_CTRL_CMD_SIZE);
 
     tpm_backend_startup_tpm(s->tpmbe, s->be_buffer_size);
+
+    tpm_ppi_init_io(&s->ppi, get_system_memory(), OBJECT(s));
 }
 
 static void tpm_crb_class_init(ObjectClass *klass, void *data)
