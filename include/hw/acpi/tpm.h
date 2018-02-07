@@ -112,6 +112,8 @@ struct tpm_ppi {
     uint32_t fret;           /* 0x115 : set by ACPI; not used */
     uint8_t res1[0x40];      /* 0x119 : reserved for future use */
     uint8_t next_step;       /* 0x159 : next step after reboot; set by BIOS */
+    uint8_t ppop;            /* 0x15a : physical presence OP; debug only */
+    uint8_t frev;            /* 0x15b : function revision; debug only */
 } QEMU_PACKED;
 
 #define TPM_PPI_STRUCT_SIZE  sizeof(struct tpm_ppi)

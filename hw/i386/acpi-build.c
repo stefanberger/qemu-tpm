@@ -1909,6 +1909,14 @@ build_tpm_ppi(Aml *dev)
                sizeof(uint32_t) * BITS_PER_BYTE));
     aml_append(field, aml_named_field("LPPR",
                sizeof(uint32_t) * BITS_PER_BYTE));
+    aml_append(field, aml_reserved_field(
+               sizeof(uint32_t) * BITS_PER_BYTE /* FRET */ +
+               sizeof(uint8_t) * BITS_PER_BYTE * sizeof(tpm_ppi->res1) +
+               sizeof(uint8_t) * BITS_PER_BYTE /* next_step */));
+    aml_append(field, aml_named_field("PPOP",
+               sizeof(uint8_t) * BITS_PER_BYTE));
+    aml_append(field, aml_named_field("FREV",
+               sizeof(uint8_t) * BITS_PER_BYTE));
     aml_append(dev, field);
 
     method = aml_method("_DSM", 4, AML_SERIALIZED);
@@ -1922,6 +1930,9 @@ build_tpm_ppi(Aml *dev)
         {
             aml_append(ifctx,
                        aml_store(aml_to_integer(aml_arg(2)), aml_local(0)));
+
+            aml_append(ifctx,
+                       aml_store(aml_local(0), aml_name("PPOP")));
 
             /* standard DSM query function */
             ifctx2 = aml_if(aml_equal(aml_local(0), aml_int(0)));
@@ -1979,6 +1990,10 @@ build_tpm_ppi(Aml *dev)
                            aml_store(
                              aml_to_integer(aml_arg(1)),
                              aml_local(1)));
+
+                aml_append(ifctx2,
+                       aml_store(aml_local(1), aml_name("FREV")));
+
                 ifctx3 = aml_if(aml_equal(aml_local(1), aml_int(1)));
                 {
                     pak = aml_package(2);
@@ -2089,6 +2104,9 @@ build_tpm_ppi(Aml *dev)
                            aml_store(
                              aml_to_integer(aml_arg(1)),
                              aml_local(1)));
+
+                aml_append(ifctx2,
+                       aml_store(aml_local(1), aml_name("FREV")));
 
                 ifctx3 = aml_if(aml_equal(aml_local(1), aml_int(1)));
                 {
