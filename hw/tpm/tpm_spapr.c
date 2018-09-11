@@ -279,6 +279,29 @@ static int tpm_spapr_do_startup_tpm(SPAPRvTPMState *s, size_t buffersize)
     return tpm_backend_startup_tpm(s->be_driver, buffersize);
 }
 
+static void tpm_spapr_update_deviceclass(VIOsPAPRDevice *dev)
+{
+    SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
+    VIOsPAPRDeviceClass *k = VIO_SPAPR_DEVICE_GET_CLASS(dev);
+
+    switch (s->be_tpm_version) {
+    case TPM_VERSION_UNSPEC:
+        k->dt_name = NULL;
+        k->dt_type = NULL;
+        k->dt_compatible = NULL;
+    case TPM_VERSION_1_2:
+        k->dt_name = "vtpm";
+        k->dt_type = "IBM,vtpm";
+        k->dt_compatible = "IBM,vtpm";
+        break;
+    case TPM_VERSION_2_0:
+        k->dt_name = "vtpm";
+        k->dt_type = "IBM,vtpm";
+        k->dt_compatible = "IBM,vtpm";
+        break;
+    }
+}
+
 static void tpm_spapr_reset(VIOsPAPRDevice *dev)
 {
     SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
@@ -286,6 +309,7 @@ static void tpm_spapr_reset(VIOsPAPRDevice *dev)
     s->state = SPAPR_VTPM_STATE_NONE;
 
     s->be_tpm_version = tpm_backend_get_tpm_version(s->be_driver);
+    tpm_spapr_update_deviceclass(dev);
 
     s->be_buffer_size = MAX(ROUND_UP(tpm_backend_get_buffer_size(s->be_driver),
                                      TARGET_PAGE_SIZE),
@@ -380,9 +404,6 @@ static void tpm_spapr_class_init(ObjectClass *klass, void *data)
 
     k->realize = tpm_spapr_realizefn;
     k->reset = tpm_spapr_reset;
-    k->dt_name = "vtpm";
-    k->dt_type = "IBM,vtpm";
-    k->dt_compatible = "IBM,vtpm";
     k->signal_mask = 0x00000001;
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     dc->props = tpm_spapr_properties;
