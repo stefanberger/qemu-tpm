@@ -68,7 +68,7 @@ typedef union TPMSpaprCRQ {
 #define MAX_BUFFER_SIZE TARGET_PAGE_SIZE
 
 typedef struct {
-    VIOsPAPRDevice vdev;
+    SpaprVioDevice vdev;
 
     TPMSpaprCRQ crq; /* track single TPM command */
 
@@ -142,7 +142,7 @@ static int tpm_spapr_process_cmd(SPAPRvTPMState *s, uint64_t dataptr)
     return rc;
 }
 
-static int tpm_spapr_do_crq(struct VIOsPAPRDevice *dev, uint8_t *crq_data)
+static int tpm_spapr_do_crq(struct SpaprVioDevice *dev, uint8_t *crq_data)
 {
     SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
     TPMSpaprCRQ local_crq;
@@ -279,10 +279,10 @@ static int tpm_spapr_do_startup_tpm(SPAPRvTPMState *s, size_t buffersize)
     return tpm_backend_startup_tpm(s->be_driver, buffersize);
 }
 
-static void tpm_spapr_update_deviceclass(VIOsPAPRDevice *dev)
+static void tpm_spapr_update_deviceclass(SpaprVioDevice *dev)
 {
     SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
-    VIOsPAPRDeviceClass *k = VIO_SPAPR_DEVICE_GET_CLASS(dev);
+    SpaprVioDeviceClass *k = VIO_SPAPR_DEVICE_GET_CLASS(dev);
 
     switch (s->be_tpm_version) {
     case TPM_VERSION_UNSPEC:
@@ -302,7 +302,7 @@ static void tpm_spapr_update_deviceclass(VIOsPAPRDevice *dev)
     }
 }
 
-static void tpm_spapr_reset(VIOsPAPRDevice *dev)
+static void tpm_spapr_reset(SpaprVioDevice *dev)
 {
     SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
 
@@ -379,7 +379,7 @@ static Property tpm_spapr_properties[] = {
     DEFINE_PROP_END_OF_LIST(),
 };
 
-static void tpm_spapr_realizefn(VIOsPAPRDevice *dev, Error **errp)
+static void tpm_spapr_realizefn(SpaprVioDevice *dev, Error **errp)
 {
     SPAPRvTPMState *s = VIO_SPAPR_VTPM(dev);
 
@@ -399,7 +399,7 @@ static void tpm_spapr_realizefn(VIOsPAPRDevice *dev, Error **errp)
 static void tpm_spapr_class_init(ObjectClass *klass, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
-    VIOsPAPRDeviceClass *k = VIO_SPAPR_DEVICE_CLASS(klass);
+    SpaprVioDeviceClass *k = VIO_SPAPR_DEVICE_CLASS(klass);
     TPMIfClass *tc = TPM_IF_CLASS(klass);
 
     k->realize = tpm_spapr_realizefn;
