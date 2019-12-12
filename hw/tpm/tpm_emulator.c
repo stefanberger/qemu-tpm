@@ -80,6 +80,8 @@ typedef struct TPMEmulator {
     unsigned int established_flag_cached:1;
 
     TPMBlobBuffers state_blobs;
+
+    bool is_suspended;
 } TPMEmulator;
 
 struct tpm_error {
@@ -486,6 +488,13 @@ static size_t tpm_emulator_get_buffer_size(TPMBackend *tb)
     return actual_size;
 }
 
+static bool tpm_emulator_is_suspended(TPMBackend *tb)
+{
+    TPMEmulator *tpm_emu = TPM_EMULATOR(tb);
+
+    return tpm_emu->is_suspended;
+}
+
 static int tpm_emulator_block_migration(TPMEmulator *tpm_emu)
 {
     Error *err = NULL;
@@ -846,6 +855,8 @@ static int tpm_emulator_pre_save(void *opaque)
     TPMBackend *tb = opaque;
     TPMEmulator *tpm_emu = TPM_EMULATOR(tb);
 
+    tpm_emu->is_suspended = true;
+
     trace_tpm_emulator_pre_save();
 
     tpm_backend_finish_sync(tb);
@@ -975,6 +986,7 @@ static void tpm_emulator_class_init(ObjectClass *klass, void *data)
     tbc->get_tpm_version = tpm_emulator_get_tpm_version;
     tbc->get_buffer_size = tpm_emulator_get_buffer_size;
     tbc->get_tpm_options = tpm_emulator_get_tpm_options;
+    tbc->is_suspended = tpm_emulator_is_suspended;
 
     tbc->handle_request = tpm_emulator_handle_request;
 }
