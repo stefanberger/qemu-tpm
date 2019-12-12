@@ -84,6 +84,8 @@ struct TPMBackendClass {
     TpmTypeOptions *(*get_tpm_options)(TPMBackend *t);
 
     void (*handle_request)(TPMBackend *s, TPMBackendCmd *cmd, Error **errp);
+
+    bool (*is_suspended)(TPMBackend *t);
 };
 
 /**
@@ -212,6 +214,16 @@ void tpm_backend_finish_sync(TPMBackend *s);
  * Returns newly allocated TPMInfo
  */
 TPMInfo *tpm_backend_query_tpm(TPMBackend *s);
+
+/**
+ * tpm_backend_is_suspended:
+ * @s: the backend to call into
+ *
+ * Whether the backend is suspended
+ *
+ * Returns true in case the backend is suspended
+ */
+bool tpm_backend_is_suspended(TPMBackend *s);
 
 TPMBackend *qemu_find_tpm_be(const char *id);
 
