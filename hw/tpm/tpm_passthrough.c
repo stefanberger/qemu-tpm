@@ -203,6 +203,11 @@ static size_t tpm_passthrough_get_buffer_size(TPMBackend *tb)
     return tpm_pt->tpm_buffersize;
 }
 
+static bool tpm_passthrough_is_suspended(TPMBackend *tb)
+{
+    return false;
+}
+
 /*
  * Unless path or file descriptor set has been provided by user,
  * determine the sysfs cancel file following kernel documentation
@@ -386,6 +391,7 @@ static void tpm_passthrough_class_init(ObjectClass *klass, void *data)
     tbc->get_buffer_size = tpm_passthrough_get_buffer_size;
     tbc->get_tpm_options = tpm_passthrough_get_tpm_options;
     tbc->handle_request = tpm_passthrough_handle_request;
+    tbc->is_suspended = tpm_passthrough_is_suspended;
 }
 
 static const TypeInfo tpm_passthrough_info = {
