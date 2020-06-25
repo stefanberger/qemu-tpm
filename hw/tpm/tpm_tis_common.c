@@ -805,6 +805,9 @@ void tpm_tis_reset(TPMState *s)
     if (s->ppi_enabled) {
         tpm_ppi_reset(&s->ppi);
     }
+    if (s->irq_num != TPM_IRQ_DISABLED) {
+        qemu_irq_lower(s->irq);
+    }
     tpm_backend_reset(s->be_driver);
 
     s->active_locty = TPM_TIS_NO_LOCALITY;
