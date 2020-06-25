@@ -606,6 +606,10 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
         if (s->irq_num == TPM_IRQ_DISABLED) {
             break;
         }
+        if (s->active_locty != locty) {
+            break;
+        }
+
         /* clearing of interrupt flags */
         if (((val & TPM_TIS_INTERRUPTS_SUPPORTED)) &&
             (s->loc[locty].ints & TPM_TIS_INTERRUPTS_SUPPORTED)) {
