@@ -1,0 +1,9 @@
+Windows seems to require IRQ 13 for supporting TPM TIS in interrupt mode.
+IRQ 13 is an edge interrupt (following /proc/interrupts). Linux TPM TIS
+driver does not work with an edge interrupt but needs a level interrupt,
+such as provided by IRQ 5. The existing TPM TIS code works with IRQ 5
+(module a patch for a bug fix in this series).
+
+If we move to IRQ 13, we loose Linux support (it will try to use it but
+operations will stall), and if we move to IRQ 5, Windows cannot access the
+TPM at all. So, we're stuck with polling.
