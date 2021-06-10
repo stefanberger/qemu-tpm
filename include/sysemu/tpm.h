@@ -15,9 +15,11 @@
 #include "qapi/qapi-types-tpm.h"
 #include "qom/object.h"
 
-int tpm_config_parse(QemuOptsList *opts_list, const char *optarg);
 int tpm_init(void);
 void tpm_cleanup(void);
+
+#ifdef CONFIG_TPM
+int tpm_config_parse(QemuOptsList *opts_list, const char *optarg);
 
 typedef enum TPMVersion {
     TPM_VERSION_UNSPEC = 0,
@@ -72,5 +74,7 @@ static inline TPMVersion tpm_get_version(TPMIf *ti)
 
     return TPM_IF_GET_CLASS(ti)->get_version(ti);
 }
+
+#endif /* CONFIG_TPM */
 
 #endif /* QEMU_TPM_H */
