@@ -17,7 +17,3 @@ int tpm_init(void)
 void tpm_cleanup(void)
 {
 }
-
-void tpm_build_ppi_acpi(TPMIf *tpm, Aml *dev)
-{
-}
