@@ -311,9 +311,12 @@ static int tpm_emulator_lock_storage(TPMEmulator *tpm_emu)
     ptm_lockstorage pls;
 
     if (!TPM_EMULATOR_IMPLEMENTS_ALL_CAPS(tpm_emu, PTM_CAP_LOCK_STORAGE)) {
+        fprintf(stderr, "locking storage not supported\n");
         trace_tpm_emulator_lock_storage_cmd_not_supt();
         return 0;
     }
+
+    fprintf(stderr, "locking storage\n");
 
     /* give failing side 100 * 10ms time to release lock */
     pls.u.req.retries = cpu_to_be32(100);
@@ -331,6 +334,8 @@ static int tpm_emulator_lock_storage(TPMEmulator *tpm_emu)
                      tpm_emulator_strerror(pls.u.resp.tpm_result));
         return -1;
     }
+
+    fprintf(stderr, "locked storage -- success\n");
 
     return 0;
 }
@@ -897,6 +902,9 @@ static void tpm_emulator_vm_state_change(void *opaque, bool running,
     TPMEmulator *tpm_emu = TPM_EMULATOR(tb);
 
     trace_tpm_emulator_vm_state_change(running, state);
+
+    fprintf(stderr, "STATE CHANGE! running: %d state: %d relock: %d\n",
+            running, state, tpm_emu->relock_swtpm);
 
     if (!running || state != RUN_STATE_RUNNING || !tpm_emu->relock_swtpm) {
         return;
