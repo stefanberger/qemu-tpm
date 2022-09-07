@@ -30,6 +30,11 @@ enum SSICSMode {
     SSI_CS_HIGH,
 };
 
+struct SSIBus {
+    BusState parent_obj;
+    bool preread;
+};
+
 /* Peripherals.  */
 struct SSIPeripheralClass {
     DeviceClass parent_class;

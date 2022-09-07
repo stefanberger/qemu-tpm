@@ -1462,7 +1462,7 @@ static int m25p80_cs(SSIPeripheral *ss, bool select)
     return 0;
 }
 
-static uint32_t m25p80_transfer8(SSIPeripheral *ss, uint32_t tx)
+static uint32_t m25p80_transfer8_ex(SSIPeripheral *ss, uint32_t tx)
 {
     Flash *s = M25P80(ss);
     uint32_t r = 0;
@@ -1543,6 +1543,33 @@ static uint32_t m25p80_transfer8(SSIPeripheral *ss, uint32_t tx)
     case STATE_IDLE:
         decode_new_cmd(s, (uint8_t)tx);
         break;
+    }
+
+    return r;
+}
+
+/*
+ * Pre-reading logic for m25p80_transfer8:
+ * The existing SPI model assumes the output byte is fully formed,
+ * can be passed to the SPI device, and the input byte can be returned,
+ * all in one operation. With SPI-GPIO, we don't have the input byte
+ * until all 8 bits of the output have been shifted out, so we have
+ * to prime the MISO with bogus values (0xFF).
+ */
+static uint32_t m25p80_transfer8(SSIPeripheral *ss, uint32_t tx)
+{
+    Flash *s = M25P80(ss);
+    SSIBus *ssibus = (SSIBus *)qdev_get_parent_bus(DEVICE(s));
+
+    uint8_t prev_state = s->state;
+    uint32_t r = m25p80_transfer8_ex(ss, tx);
+    uint8_t curr_state = s->state;
+
+    if (ssibus->preread &&
+       /* cmd state has changed into DATA reading state */
+       (!(prev_state == STATE_READ || prev_state == STATE_READING_DATA) &&
+       (curr_state == STATE_READ || curr_state == STATE_READING_DATA))) {
+        r = m25p80_transfer8_ex(ss, 0xFF);
     }
 
     return r;
