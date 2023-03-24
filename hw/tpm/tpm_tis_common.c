@@ -463,11 +463,7 @@ uint32_t tpm_tis_read_data(TPMState *s, hwaddr addr, unsigned size)
  */
 uint16_t tpm_tis_get_checksum(TPMState *s, uint8_t locty)
 {
-    if (TPM_TIS_IS_VALID_LOCTY(locty) && (s->active_locty == locty)) {
-        return cpu_to_be16(crc_ccitt(0, s->buffer, s->rw_offset));
-    } else {
-        return 0;
-    }
+    return bswap16(crc_ccitt(0, s->buffer, s->rw_offset));
 }
 
 /*

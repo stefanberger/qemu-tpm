@@ -360,7 +360,8 @@ static uint8_t tpm_tis_i2c_recv(I2CSlave *i2c)
              * Save the data in little endian byte stream in the data
              * field.
              */
-            tpm_i2c_uint_to_le_bytes(i2cst, data_read);
+            i2cst->data[1] = data_read;
+            i2cst->data[2] = data_read >> 8;
             break;
         default:
             data_read = tpm_tis_read_data(s, addr, 4);
