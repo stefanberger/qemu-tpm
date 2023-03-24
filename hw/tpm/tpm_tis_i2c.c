@@ -152,6 +152,7 @@ static inline void tpm_tis_i2c_clear_data(TPMStateI2C *i2cst)
     i2cst->operation = 0;
     i2cst->offset = 0;
     i2cst->size = 0;
+    memset(i2cst->data, 0, 5);
 
     return;
 }
@@ -242,7 +243,11 @@ static inline void tpm_tis_i2c_tpm_send(TPMStateI2C *i2cst)
             tis_reg = tpm_tis_i2c_to_tis_reg(i2cst, &i2cst->size);
 
             /* Index 0 is always a register. Convert string to uint32_t. */
-            data = tpm_i2c_le_bytes_to_uint(i2cst);
+            //data = tpm_i2c_le_bytes_to_uint(i2cst);
+            data = i2cst->data[1];
+            data |= i2cst->data[2] << 8;
+            data |= i2cst->data[3] << 16;
+            data |= i2cst->data[4] << 24;
 
             tpm_tis_write_data(&i2cst->state, tis_reg, data, 4);
             break;
@@ -375,7 +380,11 @@ static uint8_t tpm_tis_i2c_recv(I2CSlave *i2c)
              * Save the data in little endian byte stream in the data
              * field.
              */
-            tpm_i2c_uint_to_le_bytes(i2cst, data_read);
+            //tpm_i2c_uint_to_le_bytes(i2cst, data_read);
+            i2cst->data[1] = data_read;
+            i2cst->data[2] = data_read >> 8;
+            i2cst->data[3] = data_read >> 16;
+            i2cst->data[4] = data_read >> 24;
             break;
         }
 
