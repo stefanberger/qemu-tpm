@@ -206,13 +206,15 @@ static inline void tpm_tis_i2c_tpm_send(TPMStateI2C *i2cst)
             /* We handle non-FIFO here */
             tis_reg = tpm_tis_i2c_to_tis_reg(i2cst);
 
-            /* Index 0 is a register. Convert byte stream to uint32_t */
-            data = i2cst->data[1];
-            data |= i2cst->data[2] << 8;
-            data |= i2cst->data[3] << 16;
-            data |= i2cst->data[4] << 24;
+            if (tis_reg != 0xffff) {
+                /* Index 0 is a register. Convert byte stream to uint32_t */
+                data = i2cst->data[1];
+                data |= i2cst->data[2] << 8;
+                data |= i2cst->data[3] << 16;
+                data |= i2cst->data[4] << 24;
 
-            tpm_tis_write_data(&i2cst->state, tis_reg, data, 4);
+                tpm_tis_write_data(&i2cst->state, tis_reg, data, 4);
+            }
             break;
         }
 
@@ -285,7 +287,7 @@ static uint8_t tpm_tis_i2c_recv(I2CSlave *i2c)
     /* Convert I2C register to TIS register */
     addr = tpm_tis_i2c_to_tis_reg(i2cst);
     if (addr == 0xffff) {
-        return 0;
+        return 0xff;
     }
 
     if (i2cst->operation == OP_RECV) {
