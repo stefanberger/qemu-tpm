@@ -607,10 +607,6 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
 
         break;
     case TPM_TIS_REG_INT_ENABLE:
-        if (s->active_locty != locty) {
-            break;
-        }
-
         s->loc[locty].inte &= mask;
         s->loc[locty].inte |= (val & (TPM_TIS_INT_ENABLED |
                                         TPM_TIS_INT_POLARITY_MASK |
@@ -620,10 +616,6 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
         /* hard wired -- ignore */
         break;
     case TPM_TIS_REG_INT_STATUS:
-        if (s->active_locty != locty) {
-            break;
-        }
-
         /* clearing of interrupt flags */
         if (((val & TPM_TIS_INTERRUPTS_SUPPORTED)) &&
             (s->loc[locty].ints & TPM_TIS_INTERRUPTS_SUPPORTED)) {
