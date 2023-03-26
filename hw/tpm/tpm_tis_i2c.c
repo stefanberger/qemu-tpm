@@ -19,13 +19,10 @@
 
 #include "qemu/osdep.h"
 #include "hw/i2c/i2c.h"
-#include "hw/qdev-properties.h"
 #include "hw/acpi/tpm.h"
+#include "hw/sysbus.h"
 #include "migration/vmstate.h"
 #include "tpm_prop.h"
-#include "qom/object.h"
-#include "block/aio.h"
-#include "qemu/main-loop.h"
 #include "qemu/log.h"
 #include "trace.h"
 #include "tpm_tis.h"
@@ -76,9 +73,9 @@ static inline void tpm_tis_i2c_to_tis_reg(TPMStateI2C *i2cst, uint8_t i2c_reg);
 
 /* Register map */
 typedef struct regMap {
-    uint8_t   i2c_reg;    /* I2C register */
-    uint16_t  tis_reg;    /* TIS register */
-    char      name[16];   /* Register name */
+    uint8_t    i2c_reg;     /* I2C register */
+    uint16_t   tis_reg;     /* TIS register */
+    const char *reg_name;   /* Register name */
 } I2CRegMap;
 
 /*
@@ -157,7 +154,7 @@ static const VMStateDescription vmstate_tpm_tis_i2c = {
 static uint32_t tpm_i2c_interface_capability(TPMStateI2C *i2cst,
                                              uint32_t tis_cap)
 {
-    uint32_t i2c_cap = 0;
+    uint32_t i2c_cap;
 
     /* Now generate i2c capability */
     i2c_cap = (TPM_I2C_CAP_INTERFACE_TYPE |
@@ -188,7 +185,7 @@ static inline void tpm_tis_i2c_to_tis_reg(TPMStateI2C *i2cst, uint8_t i2c_reg)
     for (i = 0; i < ARRAY_SIZE(tpm_tis_reg_map); i++) {
         reg_map = &tpm_tis_reg_map[i];
         if (reg_map->i2c_reg == i2c_reg) {
-            i2cst->reg_name = reg_map->name;
+            i2cst->reg_name = reg_map->reg_name;
             i2cst->tis_addr = reg_map->tis_reg;
             if (i2cst->loc_sel != TPM_TIS_NO_LOCALITY) {
                 /* Include the locality in the address. */
@@ -441,7 +438,6 @@ static int tpm_tis_i2c_send(I2CSlave *i2c, uint8_t data)
         }
 
         return 0;
-
     } else {
         /* Return non-zero to indicate NAK */
         return 1;
@@ -489,9 +485,17 @@ static void tpm_tis_i2c_reset(DeviceState *dev)
     tpm_tis_i2c_clear_data(i2cst);
 
     i2cst->csum_enable = 0;
-    i2cst->loc_sel = TPM_TIS_NO_LOCALITY;
+    i2cst->loc_sel = 0;
 
     return tpm_tis_reset(s);
+}
+
+static void tpm_tis_i2c_initfn(Object *obj)
+{
+    TPMStateI2C *i2cst = TPM_TIS_I2C(obj);
+    TPMState *s = &i2cst->state;
+
+    sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 }
 
 static void tpm_tis_i2c_class_init(ObjectClass *klass, void *data)
@@ -504,6 +508,7 @@ static void tpm_tis_i2c_class_init(ObjectClass *klass, void *data)
     dc->reset = tpm_tis_i2c_reset;
     dc->vmsd = &vmstate_tpm_tis_i2c;
     device_class_set_props(dc, tpm_tis_i2c_properties);
+    set_bit(DEVICE_CATEGORY_MISC, dc->categories);
 
     k->event = tpm_tis_i2c_event;
     k->recv = tpm_tis_i2c_recv;
@@ -518,6 +523,7 @@ static const TypeInfo tpm_tis_i2c_info = {
     .name          = TYPE_TPM_TIS_I2C,
     .parent        = TYPE_I2C_SLAVE,
     .instance_size = sizeof(TPMStateI2C),
+    .instance_init = tpm_tis_i2c_initfn,
     .class_init    = tpm_tis_i2c_class_init,
         .interfaces = (InterfaceInfo[]) {
         { TYPE_TPM_IF },
