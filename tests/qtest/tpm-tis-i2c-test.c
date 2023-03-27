@@ -89,7 +89,6 @@ static void tpm_tis_i2c_writel(uint8_t locty, uint8_t reg, uint32_t v)
 
 static void tpm_tis_i2c_test_basic(const void *data)
 {
-    uint32_t int_enable;
     uint8_t access;
     uint32_t v;
 
@@ -103,19 +102,15 @@ static void tpm_tis_i2c_test_basic(const void *data)
     g_assert_cmpint(access, ==, TPM_TIS_ACCESS_TPM_REG_VALID_STS |
                                 TPM_TIS_ACCESS_TPM_ESTABLISHMENT);
 
-    /* enable all interrupts */
-    int_enable = (TPM_TIS_INT_ENABLED |
-                  TPM_TIS_INT_DATA_AVAILABLE |
-                  TPM_TIS_INT_STS_VALID |
-                  TPM_TIS_INT_LOCALITY_CHANGED |
-                  TPM_TIS_INT_COMMAND_READY);
+    /* read interrupt capability -- none are supported */
+    v = tpm_tis_i2c_readl(0, TPM_I2C_REG_INT_CAPABILITY);
+    g_assert_cmpint(v, ==, 0);
+
+    /* try to enable all interrupts */
     tpm_tis_i2c_writel(0, TPM_I2C_REG_INT_ENABLE, 0xffffffff);
     v = tpm_tis_i2c_readl(0, TPM_I2C_REG_INT_ENABLE);
-    g_assert_cmpint(v, ==, int_enable);
-
-    /* read interrupt capability */
-    v = tpm_tis_i2c_readl(0, TPM_I2C_REG_INT_CAPABILITY);
-    g_assert_cmpint(v, ==, int_enable);
+    /* none could be enabled */
+    g_assert_cmpint(v, ==, 0);
 
     /* disable all interrupts */
     tpm_tis_i2c_writel(0, TPM_I2C_REG_INT_ENABLE, 0);
