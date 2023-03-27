@@ -223,7 +223,7 @@ static inline void tpm_tis_i2c_tpm_send(TPMStateI2C *i2cst)
              * Checksum is not handled by TIS code hence we will consume the
              * register here.
              */
-            i2cst->csum_enable = TPM_DATA_CSUM_ENABLED;
+            i2cst->csum_enable = i2cst->data[1] & TPM_DATA_CSUM_ENABLED;
             break;
         case TPM_I2C_REG_DATA_FIFO:
             /* Handled in the main i2c_send function */
