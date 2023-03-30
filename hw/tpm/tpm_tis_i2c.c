@@ -185,6 +185,10 @@ static inline void tpm_tis_i2c_to_tis_reg(TPMStateI2C *i2cst, uint8_t i2c_reg)
 
     for (i = 0; i < ARRAY_SIZE(tpm_tis_reg_map); i++) {
         reg_map = &tpm_tis_reg_map[i];
+        /* special case is STS register */
+        if (TPM_I2C_REG_STS <= i2c_reg && i2c_reg <= TPM_I2C_REG_STS + 3) {
+            i2c_reg = TPM_I2C_REG_STS;
+        }
         if (reg_map->i2c_reg == i2c_reg) {
             i2cst->reg_name = reg_map->reg_name;
             i2cst->tis_addr = reg_map->tis_reg;
@@ -214,6 +218,8 @@ static inline void tpm_tis_i2c_clear_data(TPMStateI2C *i2cst)
 static inline void tpm_tis_i2c_tpm_send(TPMStateI2C *i2cst)
 {
     uint32_t data;
+    size_t offset = 0;
+    uint32_t sz = 4;
 
     if ((i2cst->operation == OP_SEND) && (i2cst->offset > 1)) {
 
@@ -249,9 +255,13 @@ static inline void tpm_tis_i2c_tpm_send(TPMStateI2C *i2cst)
             case TPM_I2C_REG_INT_ENABLE:
                 data &= TPM_I2C_INT_ENABLE_MASK;
                 break;
+            case TPM_I2C_REG_STS ... TPM_I2C_REG_STS + 3:
+                offset = i2cst->data[0] - TPM_I2C_REG_STS;
+                sz = 1;
+                break;
             }
 
-            tpm_tis_write_data(&i2cst->state, i2cst->tis_addr, data, 4);
+            tpm_tis_write_data(&i2cst->state, i2cst->tis_addr + offset, data, sz);
             break;
         }
 
@@ -319,6 +329,7 @@ static uint8_t tpm_tis_i2c_recv(I2CSlave *i2c)
     TPMStateI2C *i2cst = TPM_TIS_I2C(i2c);
     TPMState    *s = &i2cst->state;
     uint16_t     i2c_reg = i2cst->data[0];
+    size_t       offset;
 
     if (i2cst->operation == OP_RECV) {
 
@@ -374,12 +385,14 @@ static uint8_t tpm_tis_i2c_recv(I2CSlave *i2c)
                 data_read = tpm_tis_i2c_interface_capability(i2cst,
                                                              data_read);
                 break;
-            case TPM_I2C_REG_STS:
+            case TPM_I2C_REG_STS ... TPM_I2C_REG_STS + 3:
+                offset = i2c_reg - TPM_I2C_REG_STS;
                 /*
                  * As per specs, STS bit 31:26 are reserved and must
                  * be set to 0
                  */
                 data_read &= TPM_I2C_STS_READ_MASK;
+                data_read >>= (offset * 8);
                 break;
             }
 
