@@ -41,7 +41,6 @@ struct CRBState {
     TPMCRBState state;
 
     /* These states are only for migration */
-    uint32_t saved_regs[TPM_CRB_R_MAX];
     MemoryRegion saved_cmdmem;
 };
 typedef struct CRBState CRBState;
@@ -71,7 +70,7 @@ static int tpm_crb_none_pre_save(void *opaque)
     CRBState *s = opaque;
     void *saved_cmdmem = memory_region_get_ram_ptr(&s->saved_cmdmem);
 
-    tpm_crb_mem_save(&s->state, s->saved_regs, saved_cmdmem);
+    tpm_crb_mem_save(&s->state, saved_cmdmem);
     return tpm_crb_pre_save(&s->state);
 }
 
@@ -83,7 +82,7 @@ static int tpm_crb_none_post_load(void *opaque, int version_id)
     CRBState *s = opaque;
     void *saved_cmdmem = memory_region_get_ram_ptr(&s->saved_cmdmem);
 
-    tpm_crb_mem_load(&s->state, s->saved_regs, saved_cmdmem);
+    tpm_crb_mem_load(&s->state, saved_cmdmem);
     return 0;
 }
 
@@ -92,7 +91,7 @@ static const VMStateDescription vmstate_tpm_crb_none = {
     .pre_save = tpm_crb_none_pre_save,
     .post_load = tpm_crb_none_post_load,
     .fields = (VMStateField[]) {
-        VMSTATE_UINT32_ARRAY(saved_regs, CRBState, TPM_CRB_R_MAX),
+        VMSTATE_UINT32_ARRAY(state.saved_regs, CRBState, TPM_CRB_R_MAX),
         VMSTATE_END_OF_LIST(),
     }
 };

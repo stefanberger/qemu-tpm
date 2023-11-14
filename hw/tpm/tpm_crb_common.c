@@ -31,12 +31,12 @@
 #include "qom/object.h"
 #include "tpm_crb.h"
 
-static uint8_t tpm_crb_get_active_locty(TPMCRBState *s, uint32_t *regs)
+static uint8_t tpm_crb_get_active_locty(TPMCRBState *s, uint32_t *saved_regs)
 {
-    if (!ARRAY_FIELD_EX32(regs, CRB_LOC_STATE, locAssigned)) {
+    if (!ARRAY_FIELD_EX32(saved_regs, CRB_LOC_STATE, locAssigned)) {
         return TPM_CRB_NO_LOCALITY;
     }
-    return ARRAY_FIELD_EX32(regs, CRB_LOC_STATE, activeLocality);
+    return ARRAY_FIELD_EX32(saved_regs, CRB_LOC_STATE, activeLocality);
 }
 
 static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
@@ -44,8 +44,11 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
 {
     TPMCRBState *s = opaque;
     uint8_t locty =  addr >> 12;
-    uint32_t *regs;
+    uint32_t *regs, *saved_regs;
+    unsigned i;
     void *mem;
+
+    saved_regs = s->saved_regs;
 
     trace_tpm_crb_mmio_write(addr, size, val);
     regs = memory_region_get_ram_ptr(&s->mmio);
@@ -56,7 +59,10 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
     if (addr >= A_CRB_DATA_BUFFER) {
         assert(addr + size <= TPM_CRB_ADDR_SIZE);
         assert(size <= sizeof(val));
-        memcpy(mem + addr - A_CRB_DATA_BUFFER, &val, size);
+        for (i = 0; i < size; i++) {
+            *(char *)(mem + addr - A_CRB_DATA_BUFFER + i) = val;
+            val >>= 8;
+        }
         memory_region_set_dirty(&s->mmio, addr, size);
         return;
     }
@@ -66,27 +72,29 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
     case A_CRB_CTRL_REQ:
         switch (val) {
         case CRB_CTRL_REQ_CMD_READY:
-            ARRAY_FIELD_DP32(regs, CRB_CTRL_STS,
+            ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
                              tpmIdle, 0);
             break;
         case CRB_CTRL_REQ_GO_IDLE:
-            ARRAY_FIELD_DP32(regs, CRB_CTRL_STS,
+            ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
                              tpmIdle, 1);
             break;
         }
+        regs[R_CRB_CTRL_STS] = cpu_to_le32(saved_regs[R_CRB_CTRL_STS]);
         break;
     case A_CRB_CTRL_CANCEL:
         if (val == CRB_CANCEL_INVOKE &&
-            regs[R_CRB_CTRL_START] & CRB_START_INVOKE) {
+            saved_regs[R_CRB_CTRL_START] & CRB_START_INVOKE) {
             tpm_backend_cancel_cmd(s->tpmbe);
         }
         break;
     case A_CRB_CTRL_START:
         if (val == CRB_START_INVOKE &&
-            !(regs[R_CRB_CTRL_START] & CRB_START_INVOKE) &&
-            tpm_crb_get_active_locty(s, regs) == locty) {
+            !(saved_regs[R_CRB_CTRL_START] & CRB_START_INVOKE) &&
+            tpm_crb_get_active_locty(s, saved_regs) == locty) {
 
-            regs[R_CRB_CTRL_START] |= CRB_START_INVOKE;
+            saved_regs[R_CRB_CTRL_START] |= CRB_START_INVOKE;
+            regs[R_CRB_CTRL_START] = cpu_to_le32(saved_regs[R_CRB_CTRL_START]);
             s->cmd = (TPMBackendCmd) {
                 .in = mem,
                 .in_len = MIN(tpm_cmd_get_size(mem), s->be_buffer_size),
@@ -103,20 +111,22 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
             /* not loc 3 or 4 */
             break;
         case CRB_LOC_CTRL_RELINQUISH:
-            ARRAY_FIELD_DP32(regs, CRB_LOC_STATE,
+            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
                              locAssigned, 0);
-            ARRAY_FIELD_DP32(regs, CRB_LOC_STS,
+            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STS,
                              Granted, 0);
             break;
         case CRB_LOC_CTRL_REQUEST_ACCESS:
-            ARRAY_FIELD_DP32(regs, CRB_LOC_STS,
+            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STS,
                              Granted, 1);
-            ARRAY_FIELD_DP32(regs, CRB_LOC_STS,
+            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STS,
                              beenSeized, 0);
-            ARRAY_FIELD_DP32(regs, CRB_LOC_STATE,
+            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
                              locAssigned, 1);
             break;
         }
+        regs[R_CRB_LOC_STATE] = cpu_to_le32(saved_regs[R_CRB_LOC_STATE]);
+        regs[R_CRB_LOC_STS] = cpu_to_le32(saved_regs[R_CRB_LOC_STS]);
         break;
     }
 
@@ -135,12 +145,15 @@ const MemoryRegionOps tpm_crb_memory_ops = {
 void tpm_crb_request_completed(TPMCRBState *s, int ret)
 {
     uint32_t *regs = memory_region_get_ram_ptr(&s->mmio);
+    uint32_t *saved_regs = s->saved_regs;
 
     assert(regs);
-    regs[R_CRB_CTRL_START] &= ~CRB_START_INVOKE;
+    saved_regs[R_CRB_CTRL_START] &= ~CRB_START_INVOKE;
+    regs[R_CRB_CTRL_START] = cpu_to_le32(saved_regs[R_CRB_CTRL_START]);
     if (ret != 0) {
-        ARRAY_FIELD_DP32(regs, CRB_CTRL_STS,
+        ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
                          tpmSts, 1); /* fatal error */
+        regs[R_CRB_CTRL_STS] = cpu_to_le32(saved_regs[R_CRB_CTRL_STS]);
     }
 
     memory_region_set_dirty(&s->mmio, 0, TPM_CRB_ADDR_SIZE);
@@ -160,6 +173,7 @@ int tpm_crb_pre_save(TPMCRBState *s)
 
 void tpm_crb_reset(TPMCRBState *s, uint64_t baseaddr)
 {
+    uint32_t *saved_regs = s->saved_regs;
     uint32_t *regs = memory_region_get_ram_ptr(&s->mmio);
 
     assert(regs);
@@ -169,41 +183,56 @@ void tpm_crb_reset(TPMCRBState *s, uint64_t baseaddr)
     tpm_backend_reset(s->tpmbe);
 
     memset(regs, 0, TPM_CRB_ADDR_SIZE);
+    memset(s->saved_regs, 0, sizeof(s->saved_regs));
 
-    ARRAY_FIELD_DP32(regs, CRB_LOC_STATE,
+    ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
                      tpmRegValidSts, 1);
-    ARRAY_FIELD_DP32(regs, CRB_LOC_STATE,
+    ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
                      tpmEstablished, 1);
-    ARRAY_FIELD_DP32(regs, CRB_CTRL_STS,
+    regs[R_CRB_LOC_STATE] = cpu_to_le32(saved_regs[R_CRB_LOC_STATE]);
+
+    ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
                      tpmIdle, 1);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    regs[R_CRB_CTRL_STS] = cpu_to_le32(saved_regs[R_CRB_CTRL_STS]);
+
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      InterfaceType, CRB_INTF_TYPE_CRB_ACTIVE);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      InterfaceVersion, CRB_INTF_VERSION_CRB);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      CapLocality, CRB_INTF_CAP_LOCALITY_0_ONLY);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      CapCRBIdleBypass, CRB_INTF_CAP_IDLE_FAST);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      CapDataXferSizeSupport, CRB_INTF_CAP_XFER_SIZE_64);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      CapFIFO, CRB_INTF_CAP_FIFO_NOT_SUPPORTED);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      CapCRB, CRB_INTF_CAP_CRB_SUPPORTED);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      InterfaceSelector, CRB_INTF_IF_SELECTOR_CRB);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID,
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
                      RID, 0b0000);
-    ARRAY_FIELD_DP32(regs, CRB_INTF_ID2,
+    regs[R_CRB_INTF_ID] = cpu_to_le32(saved_regs[R_CRB_INTF_ID]);
+
+    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID2,
                      VID, PCI_VENDOR_ID_IBM);
+    regs[R_CRB_INTF_ID2] = cpu_to_le32(saved_regs[R_CRB_INTF_ID2]);
 
     baseaddr += A_CRB_DATA_BUFFER;
-    regs[R_CRB_CTRL_CMD_SIZE] = CRB_CTRL_CMD_SIZE;
-    regs[R_CRB_CTRL_CMD_LADDR] = (uint32_t)baseaddr;
-    regs[R_CRB_CTRL_CMD_HADDR] = (uint32_t)(baseaddr >> 32);
-    regs[R_CRB_CTRL_RSP_SIZE] = CRB_CTRL_CMD_SIZE;
-    regs[R_CRB_CTRL_RSP_LADDR] = (uint32_t)baseaddr;
-    regs[R_CRB_CTRL_RSP_HADDR] = (uint32_t)(baseaddr >> 32);
+    saved_regs[R_CRB_CTRL_CMD_SIZE] = CRB_CTRL_CMD_SIZE;
+    saved_regs[R_CRB_CTRL_CMD_LADDR] = (uint32_t)baseaddr;
+    saved_regs[R_CRB_CTRL_CMD_HADDR] = (uint32_t)(baseaddr >> 32);
+    saved_regs[R_CRB_CTRL_RSP_SIZE] = CRB_CTRL_CMD_SIZE;
+    saved_regs[R_CRB_CTRL_RSP_LADDR] = (uint32_t)baseaddr;
+    saved_regs[R_CRB_CTRL_RSP_HADDR] = (uint32_t)(baseaddr >> 32);
+
+    regs[R_CRB_CTRL_CMD_SIZE] = cpu_to_le32(saved_regs[R_CRB_CTRL_CMD_SIZE]);
+    regs[R_CRB_CTRL_CMD_LADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_CMD_LADDR]);
+    regs[R_CRB_CTRL_CMD_HADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_CMD_HADDR]);
+    regs[R_CRB_CTRL_RSP_SIZE] = cpu_to_le32(saved_regs[R_CRB_CTRL_RSP_SIZE]);
+    regs[R_CRB_CTRL_RSP_LADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_RSP_LADDR]);
+    regs[R_CRB_CTRL_RSP_HADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_RSP_HADDR]);
 
     s->be_buffer_size = MIN(tpm_backend_get_buffer_size(s->tpmbe),
                             CRB_CTRL_CMD_SIZE);
@@ -225,20 +254,17 @@ void tpm_crb_init_memory(Object *obj, TPMCRBState *s, Error **errp)
     }
 }
 
-void tpm_crb_mem_save(TPMCRBState *s, uint32_t *saved_regs, void *saved_cmdmem)
+void tpm_crb_mem_save(TPMCRBState *s, void *saved_cmdmem)
 {
     uint32_t *regs = memory_region_get_ram_ptr(&s->mmio);
 
-    memcpy(saved_regs, regs, A_CRB_DATA_BUFFER);
     memcpy(saved_cmdmem, &regs[R_CRB_DATA_BUFFER], CRB_CTRL_CMD_SIZE);
 }
 
-void tpm_crb_mem_load(TPMCRBState *s, const uint32_t *saved_regs,
-                      const void *saved_cmdmem)
+void tpm_crb_mem_load(TPMCRBState *s, const void *saved_cmdmem)
 {
     uint32_t *regs = memory_region_get_ram_ptr(&s->mmio);
 
-    memcpy(regs, saved_regs, A_CRB_DATA_BUFFER);
     memcpy(&regs[R_CRB_DATA_BUFFER], saved_cmdmem, CRB_CTRL_CMD_SIZE);
 }
 
