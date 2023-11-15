@@ -31,6 +31,22 @@
 #include "qom/object.h"
 #include "tpm_crb.h"
 
+/*
+ * Use this macro to set values in the registers (saved_regs) and MMIO-mapped
+ * registers.
+ */
+#define ARRAY_FIELD_DP32_ROMD_LE(saved_regs, reg, field, val, regs)	\
+    do {								\
+        ARRAY_FIELD_DP32(saved_regs, reg, field, val);			\
+        regs[R_##reg] = cpu_to_le32(saved_regs[R_##reg]);		\
+    } while (0)
+
+#define LOAD_REG32_ROMD_LE(saved_regs, reg, val, regs)			\
+    do {								\
+        saved_regs[R_##reg] = val;					\
+        regs[R_##reg] = cpu_to_le32(val);				\
+    } while (0)
+
 static uint8_t tpm_crb_get_active_locty(TPMCRBState *s, uint32_t *saved_regs)
 {
     if (!ARRAY_FIELD_EX32(saved_regs, CRB_LOC_STATE, locAssigned)) {
@@ -72,15 +88,14 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
     case A_CRB_CTRL_REQ:
         switch (val) {
         case CRB_CTRL_REQ_CMD_READY:
-            ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
-                             tpmIdle, 0);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_CTRL_STS,
+                                     tpmIdle, 0, regs);
             break;
         case CRB_CTRL_REQ_GO_IDLE:
-            ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
-                             tpmIdle, 1);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_CTRL_STS,
+                                     tpmIdle, 1, regs);
             break;
         }
-        regs[R_CRB_CTRL_STS] = cpu_to_le32(saved_regs[R_CRB_CTRL_STS]);
         break;
     case A_CRB_CTRL_CANCEL:
         if (val == CRB_CANCEL_INVOKE &&
@@ -111,22 +126,20 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
             /* not loc 3 or 4 */
             break;
         case CRB_LOC_CTRL_RELINQUISH:
-            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
-                             locAssigned, 0);
-            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STS,
-                             Granted, 0);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STATE,
+                                     locAssigned, 0, regs);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STS,
+                                     Granted, 0, regs);
             break;
         case CRB_LOC_CTRL_REQUEST_ACCESS:
-            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STS,
-                             Granted, 1);
-            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STS,
-                             beenSeized, 0);
-            ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
-                             locAssigned, 1);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STS,
+                                     Granted, 1, regs);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STS,
+                                     beenSeized, 0, regs);
+            ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STATE,
+                                     locAssigned, 1, regs);
             break;
         }
-        regs[R_CRB_LOC_STATE] = cpu_to_le32(saved_regs[R_CRB_LOC_STATE]);
-        regs[R_CRB_LOC_STS] = cpu_to_le32(saved_regs[R_CRB_LOC_STS]);
         break;
     }
 
@@ -151,9 +164,8 @@ void tpm_crb_request_completed(TPMCRBState *s, int ret)
     saved_regs[R_CRB_CTRL_START] &= ~CRB_START_INVOKE;
     regs[R_CRB_CTRL_START] = cpu_to_le32(saved_regs[R_CRB_CTRL_START]);
     if (ret != 0) {
-        ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
-                         tpmSts, 1); /* fatal error */
-        regs[R_CRB_CTRL_STS] = cpu_to_le32(saved_regs[R_CRB_CTRL_STS]);
+        ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_CTRL_STS,
+                                 tpmSts, 1, regs); /* fatal error */
     }
 
     memory_region_set_dirty(&s->mmio, 0, TPM_CRB_ADDR_SIZE);
@@ -185,54 +197,46 @@ void tpm_crb_reset(TPMCRBState *s, uint64_t baseaddr)
     memset(regs, 0, TPM_CRB_ADDR_SIZE);
     memset(s->saved_regs, 0, sizeof(s->saved_regs));
 
-    ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
-                     tpmRegValidSts, 1);
-    ARRAY_FIELD_DP32(saved_regs, CRB_LOC_STATE,
-                     tpmEstablished, 1);
-    regs[R_CRB_LOC_STATE] = cpu_to_le32(saved_regs[R_CRB_LOC_STATE]);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STATE,
+                             tpmRegValidSts, 1, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_LOC_STATE,
+                             tpmEstablished, 1, regs);
 
-    ARRAY_FIELD_DP32(saved_regs, CRB_CTRL_STS,
-                     tpmIdle, 1);
-    regs[R_CRB_CTRL_STS] = cpu_to_le32(saved_regs[R_CRB_CTRL_STS]);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_CTRL_STS,
+                             tpmIdle, 1, regs);
 
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     InterfaceType, CRB_INTF_TYPE_CRB_ACTIVE);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     InterfaceVersion, CRB_INTF_VERSION_CRB);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     CapLocality, CRB_INTF_CAP_LOCALITY_0_ONLY);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     CapCRBIdleBypass, CRB_INTF_CAP_IDLE_FAST);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     CapDataXferSizeSupport, CRB_INTF_CAP_XFER_SIZE_64);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     CapFIFO, CRB_INTF_CAP_FIFO_NOT_SUPPORTED);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     CapCRB, CRB_INTF_CAP_CRB_SUPPORTED);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     InterfaceSelector, CRB_INTF_IF_SELECTOR_CRB);
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID,
-                     RID, 0b0000);
-    regs[R_CRB_INTF_ID] = cpu_to_le32(saved_regs[R_CRB_INTF_ID]);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             InterfaceType, CRB_INTF_TYPE_CRB_ACTIVE, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             InterfaceVersion, CRB_INTF_VERSION_CRB, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             CapLocality, CRB_INTF_CAP_LOCALITY_0_ONLY, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             CapCRBIdleBypass, CRB_INTF_CAP_IDLE_FAST, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             CapDataXferSizeSupport, CRB_INTF_CAP_XFER_SIZE_64,
+                             regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             CapFIFO, CRB_INTF_CAP_FIFO_NOT_SUPPORTED, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             CapCRB, CRB_INTF_CAP_CRB_SUPPORTED, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             InterfaceSelector, CRB_INTF_IF_SELECTOR_CRB, regs);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID,
+                             RID, 0b0000, regs);
 
-    ARRAY_FIELD_DP32(saved_regs, CRB_INTF_ID2,
-                     VID, PCI_VENDOR_ID_IBM);
-    regs[R_CRB_INTF_ID2] = cpu_to_le32(saved_regs[R_CRB_INTF_ID2]);
+    ARRAY_FIELD_DP32_ROMD_LE(saved_regs, CRB_INTF_ID2,
+                             VID, PCI_VENDOR_ID_IBM, regs);
 
     baseaddr += A_CRB_DATA_BUFFER;
-    saved_regs[R_CRB_CTRL_CMD_SIZE] = CRB_CTRL_CMD_SIZE;
-    saved_regs[R_CRB_CTRL_CMD_LADDR] = (uint32_t)baseaddr;
-    saved_regs[R_CRB_CTRL_CMD_HADDR] = (uint32_t)(baseaddr >> 32);
-    saved_regs[R_CRB_CTRL_RSP_SIZE] = CRB_CTRL_CMD_SIZE;
-    saved_regs[R_CRB_CTRL_RSP_LADDR] = (uint32_t)baseaddr;
-    saved_regs[R_CRB_CTRL_RSP_HADDR] = (uint32_t)(baseaddr >> 32);
-
-    regs[R_CRB_CTRL_CMD_SIZE] = cpu_to_le32(saved_regs[R_CRB_CTRL_CMD_SIZE]);
-    regs[R_CRB_CTRL_CMD_LADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_CMD_LADDR]);
-    regs[R_CRB_CTRL_CMD_HADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_CMD_HADDR]);
-    regs[R_CRB_CTRL_RSP_SIZE] = cpu_to_le32(saved_regs[R_CRB_CTRL_RSP_SIZE]);
-    regs[R_CRB_CTRL_RSP_LADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_RSP_LADDR]);
-    regs[R_CRB_CTRL_RSP_HADDR] = cpu_to_le32(saved_regs[R_CRB_CTRL_RSP_HADDR]);
+    LOAD_REG32_ROMD_LE(saved_regs, CRB_CTRL_CMD_SIZE, CRB_CTRL_CMD_SIZE, regs);
+    LOAD_REG32_ROMD_LE(saved_regs, CRB_CTRL_CMD_LADDR, (uint32_t)baseaddr, regs);
+    LOAD_REG32_ROMD_LE(saved_regs, CRB_CTRL_CMD_HADDR,
+                       (uint32_t)(baseaddr >> 32), regs);
+    LOAD_REG32_ROMD_LE(saved_regs, CRB_CTRL_RSP_SIZE, CRB_CTRL_CMD_SIZE, regs);
+    LOAD_REG32_ROMD_LE(saved_regs, CRB_CTRL_RSP_LADDR, (uint32_t)baseaddr, regs);
+    LOAD_REG32_ROMD_LE(saved_regs, CRB_CTRL_RSP_HADDR,
+                       (uint32_t)(baseaddr >> 32), regs);
 
     s->be_buffer_size = MIN(tpm_backend_get_buffer_size(s->tpmbe),
                             CRB_CTRL_CMD_SIZE);
