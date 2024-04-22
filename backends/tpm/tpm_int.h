@@ -64,6 +64,7 @@ struct tpm_resp_hdr {
 /* TPM2 defines */
 #define TPM2_ST_NO_SESSIONS       0x8001
 
+#define TPM2_CC_SelfTest          0x00000143
 #define TPM2_CC_ReadClock         0x00000181
 #define TPM2_CC_GetCapability     0x0000017a
 

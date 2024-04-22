@@ -86,7 +86,7 @@ static void tpm_passthrough_unix_tx_bufs(TPMPassthruState *tpm_pt,
     tpm_pt->tpm_executing = true;
     *selftest_done = false;
 
-    is_selftest = tpm_util_is_selftest(in, in_len);
+    is_selftest = tpm_util_is_selftest(tpm_pt->tpm_version, in, in_len);
 
     ret = qemu_write_full(tpm_pt->tpm_fd, in, in_len);
     if (ret != in_len) {

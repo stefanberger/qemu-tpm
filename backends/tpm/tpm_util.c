@@ -94,10 +94,24 @@ void tpm_util_write_fatal_error_response(uint8_t *out, uint32_t out_len)
     }
 }
 
-bool tpm_util_is_selftest(const uint8_t *in, uint32_t in_len)
+bool tpm_util_is_selftest(TPMVersion tpm_version,
+                          const uint8_t *in, uint32_t in_len)
 {
-    if (in_len >= sizeof(struct tpm_req_hdr)) {
-        return tpm_cmd_get_ordinal(in) == TPM_ORD_ContinueSelfTest;
+    uint32_t ord;
+
+    if (in_len < sizeof(struct tpm_req_hdr)) {
+        return false;
+    }
+
+    ord = tpm_cmd_get_ordinal(in);
+
+    switch (tpm_version) {
+    case TPM_VERSION_1_2:
+        return ord == TPM_ORD_ContinueSelfTest;
+    case TPM_VERSION_2_0:
+        return ord == TPM2_CC_SelfTest;
+    case TPM_VERSION_UNSPEC:
+        break;
     }
 
     return false;

@@ -162,7 +162,7 @@ static int tpm_emulator_unix_tx_bufs(TPMEmulator *tpm_emu,
 
     if (selftest_done) {
         *selftest_done = false;
-        is_selftest = tpm_util_is_selftest(in, in_len);
+        is_selftest = tpm_util_is_selftest(tpm_emu->tpm_version, in, in_len);
     }
 
     ret = qio_channel_write_all(tpm_emu->data_ioc, (char *)in, in_len, errp);
