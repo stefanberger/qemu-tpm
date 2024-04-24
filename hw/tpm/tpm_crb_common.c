@@ -251,8 +251,15 @@ void tpm_crb_reset(TPMCRBState *s, uint64_t baseaddr)
 
 void tpm_crb_init_memory(Object *obj, TPMCRBState *s, Error **errp)
 {
+    /*
+     * To be able to map the romd device's read-only memory area it must be at
+     * least the size of a page of the host. Pages can be 4k, 16k or 64k. We
+     * choose 16k, which enables also migration to hosts with 16k pages.
+     */
+    uint64_t tpm_crb_addr_size = 16 * 1024;
+
     memory_region_init_rom_device_nomigrate(&s->mmio, obj, &tpm_crb_memory_ops,
-        s, "tpm-crb-mem", TPM_CRB_ADDR_SIZE, errp);
+        s, "tpm-crb-mem", tpm_crb_addr_size, errp);
     if (s->ppi_enabled) {
         tpm_ppi_init_memory(&s->ppi, obj);
     }
