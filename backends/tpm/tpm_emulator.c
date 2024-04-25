@@ -226,8 +226,20 @@ static void tpm_emulator_handle_request(TPMBackend *tb, TPMBackendCmd *cmd,
                                         Error **errp)
 {
     TPMEmulator *tpm_emu = TPM_EMULATOR(tb);
+    static bool first = true;
 
     trace_tpm_emulator_handle_request();
+
+    if (first) {
+        unsigned char buf[200];
+        tpm_emulator_set_locality(tpm_emu, cmd->locty, errp);
+        tpm_emulator_unix_tx_bufs(tpm_emu,
+                                  ((uint8_t []){0x80,0x01,0x00,0x00,0x00,0x0c,0x00,0x00,0x01,0x44,0x00,0x00}),
+                                  12,
+                                  buf, sizeof(buf),
+                                  NULL, errp);
+        first = false;
+    }
 
     if (tpm_emulator_set_locality(tpm_emu, cmd->locty, errp) < 0 ||
         tpm_emulator_unix_tx_bufs(tpm_emu, cmd->in, cmd->in_len,
