@@ -83,6 +83,8 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
         return;
     }
 
+#define DELAY (1000 * 1000)
+
     /* otherwise we are doing MMIO writes */
     switch (addr) {
     case A_CRB_CTRL_REQ:
@@ -142,6 +144,7 @@ static void tpm_crb_mmio_write(void *opaque, hwaddr addr,
         }
         break;
     }
+    usleep(DELAY);
 
     memory_region_set_dirty(&s->mmio, 0, A_CRB_DATA_BUFFER);
 }
