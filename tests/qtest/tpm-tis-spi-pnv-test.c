@@ -50,53 +50,11 @@ static const uint8_t TPM_CMD[12] =
 #define DPRINTF_STS \
     DPRINTF("%s: %d: sts = 0x%08x\n", __func__, __LINE__, sts)
 
-static uint64_t pnv_spi_tpm_read(const PnvChip *chip, uint32_t reg);
-static void pnv_spi_tpm_write(const PnvChip *chip, uint32_t reg, uint64_t val);
-static uint64_t spi_read_reg(const PnvChip *chip);
-static void spi_write_reg(const PnvChip *chip, uint64_t val);
-static void spi_access_start(const PnvChip *chip, bool n2, uint8_t bytes,
-                             uint8_t tpm_op, uint32_t tpm_reg);
-
-static inline void tpm_reg_writeb(const PnvChip *c,
-                                  int locl,
-                                  uint8_t reg,
-                                  uint8_t val)
+static uint64_t pnv_spi_tpm_read(const PnvChip *chip, uint32_t reg)
 {
-    uint32_t tpm_reg_locl = SPI_TPM_TIS_ADDR | (locl << TPM_TIS_LOCALITY_SHIFT);
+    uint32_t pcba = SPI_TPM_BASE + reg;
 
-    spi_access_start(c, false, 1, TPM_WRITE_OP, tpm_reg_locl | reg);
-    spi_write_reg(c, bswap64(val));
-}
-
-static inline uint8_t tpm_reg_readb(const PnvChip *c, int locl, uint8_t reg)
-{
-    uint32_t tpm_reg_locl = SPI_TPM_TIS_ADDR | (locl << TPM_TIS_LOCALITY_SHIFT);
-
-    spi_access_start(c, true, 1, TPM_READ_OP, tpm_reg_locl | reg);
-    return spi_read_reg(c);
-}
-
-static inline void tpm_reg_writew(const PnvChip *c,
-                                  int locl,
-                                  uint8_t reg,
-                                  uint32_t val)
-{
-    int i;
-
-    for (i = 0; i < 4; i++) {
-        tpm_reg_writeb(c, locl, reg + i, ((val >> (8 * i)) & 0xff));
-    }
-}
-
-static inline uint32_t tpm_reg_readw(const PnvChip *c, int locl, uint8_t reg)
-{
-    uint32_t val = 0;
-    int i;
-
-    for (i = 0; i < 4; i++) {
-        val |= tpm_reg_readb(c, locl, reg + i) << (8 * i);
-    }
-    return val;
+    return qtest_readq(global_qtest, pnv_xscom_addr(chip, pcba));
 }
 
 static void pnv_spi_tpm_write(const PnvChip *chip,
@@ -104,40 +62,8 @@ static void pnv_spi_tpm_write(const PnvChip *chip,
                               uint64_t val)
 {
     uint32_t pcba = SPI_TPM_BASE + reg;
+
     qtest_writeq(global_qtest, pnv_xscom_addr(chip, pcba), val);
-}
-
-static uint64_t pnv_spi_tpm_read(const PnvChip *chip, uint32_t reg)
-{
-    uint32_t pcba = SPI_TPM_BASE + reg;
-    return qtest_readq(global_qtest, pnv_xscom_addr(chip, pcba));
-}
-
-static void spi_access_start(const PnvChip *chip,
-                             bool n2,
-                             uint8_t bytes,
-                             uint8_t tpm_op,
-                             uint32_t tpm_reg)
-{
-    uint64_t cfg_reg;
-    uint64_t reg_op;
-    uint64_t seq_op = SEQ_OP_REG_BASIC;
-
-    cfg_reg = pnv_spi_tpm_read(chip, SPI_CLK_CFG_REG);
-    if (cfg_reg != CFG_COUNT_COMPARE_1) {
-        pnv_spi_tpm_write(chip, SPI_CLK_CFG_REG, CFG_COUNT_COMPARE_1);
-    }
-    /* bytes - sequencer operation register bits 24:31 */
-    if (n2) {
-        seq_op |= SPI_SHIFT_COUNTER_N2 | (bytes << 0x18);
-    } else {
-        seq_op |= SPI_SHIFT_COUNTER_N1 | (bytes << 0x18);
-    }
-    pnv_spi_tpm_write(chip, SPI_SEQ_OP_REG, seq_op);
-    pnv_spi_tpm_write(chip, SPI_MM_REG, MM_REG_RDR_MATCH);
-    pnv_spi_tpm_write(chip, SPI_CTR_CFG_REG, (uint64_t)0);
-    reg_op = bswap64(tpm_op) | ((uint64_t)tpm_reg << 0x20);
-    pnv_spi_tpm_write(chip, SPI_XMIT_DATA_REG, reg_op);
 }
 
 static void spi_op_complete(const PnvChip *chip)
@@ -147,6 +73,33 @@ static void spi_op_complete(const PnvChip *chip)
     cfg_reg = pnv_spi_tpm_read(chip, SPI_CLK_CFG_REG);
     g_assert_cmpuint(CFG_COUNT_COMPARE_1, ==, cfg_reg);
     pnv_spi_tpm_write(chip, SPI_CLK_CFG_REG, 0);
+}
+
+static uint64_t spi_read_reg(const PnvChip *chip)
+{
+    int i;
+    uint64_t spi_sts, val = 0;
+
+    for (i = 0; i < LONG_MAX_RETRIES; i++) {
+        spi_sts = pnv_spi_tpm_read(chip, SPI_STS_REG);
+        if (GETFIELD(SPI_STS_RDR_FULL, spi_sts) == 1) {
+            val = pnv_spi_tpm_read(chip, SPI_RCV_DATA_REG);
+            break;
+        }
+        sleep(0.5);
+    }
+    for (i = 0; i < SHORT_MAX_RETRIES; i++) {
+        spi_sts = pnv_spi_tpm_read(chip, SPI_STS_REG);
+        if (GETFIELD(SPI_STS_RDR_FULL, spi_sts) == 1) {
+            sleep(0.1);
+        } else {
+            break;
+        }
+    }
+    /* SPI_STS_RDR_FULL bit should be reset after read */
+    g_assert_cmpuint(0, ==, GETFIELD(SPI_STS_RDR_FULL, spi_sts));
+    spi_op_complete(chip);
+    return val;
 }
 
 static void spi_write_reg(const PnvChip *chip, uint64_t val)
@@ -179,31 +132,104 @@ static void spi_write_reg(const PnvChip *chip, uint64_t val)
     spi_op_complete(chip);
 }
 
-static uint64_t spi_read_reg(const PnvChip *chip)
+static void spi_access_start(const PnvChip *chip,
+                             bool n2,
+                             uint8_t bytes,
+                             uint8_t tpm_op,
+                             uint32_t tpm_reg)
+{
+    uint64_t cfg_reg;
+    uint64_t reg_op;
+    uint64_t seq_op = SEQ_OP_REG_BASIC;
+
+    cfg_reg = pnv_spi_tpm_read(chip, SPI_CLK_CFG_REG);
+    if (cfg_reg != CFG_COUNT_COMPARE_1) {
+        pnv_spi_tpm_write(chip, SPI_CLK_CFG_REG, CFG_COUNT_COMPARE_1);
+    }
+    /* bytes - sequencer operation register bits 24:31 */
+    if (n2) {
+        seq_op |= SPI_SHIFT_COUNTER_N2 | (bytes << 0x18);
+    } else {
+        seq_op |= SPI_SHIFT_COUNTER_N1 | (bytes << 0x18);
+    }
+    pnv_spi_tpm_write(chip, SPI_SEQ_OP_REG, seq_op);
+    pnv_spi_tpm_write(chip, SPI_MM_REG, MM_REG_RDR_MATCH);
+    pnv_spi_tpm_write(chip, SPI_CTR_CFG_REG, (uint64_t)0);
+    reg_op = (uint64_t)tpm_op << 56 | ((uint64_t)tpm_reg << 0x20);
+    pnv_spi_tpm_write(chip, SPI_XMIT_DATA_REG, reg_op);
+}
+
+static inline void tpm_reg_writeb(const PnvChip *c,
+                                  int locl,
+                                  uint16_t reg,
+                                  uint8_t val)
+{
+    uint32_t tpm_reg_locl = SPI_TPM_TIS_ADDR | (locl << TPM_TIS_LOCALITY_SHIFT);
+
+    spi_access_start(c, false, 1, TPM_WRITE_OP, tpm_reg_locl | reg);
+    spi_write_reg(c, (uint64_t)val << 56);
+}
+
+static inline uint8_t tpm_reg_readb(const PnvChip *c, int locl, uint16_t reg)
+{
+    uint32_t tpm_reg_locl = SPI_TPM_TIS_ADDR | (locl << TPM_TIS_LOCALITY_SHIFT);
+
+    spi_access_start(c, true, 1, TPM_READ_OP, tpm_reg_locl | reg);
+    return spi_read_reg(c);
+}
+
+static inline void tpm_reg_writel(const PnvChip *c,
+                                  int locl,
+                                  uint8_t reg,
+                                  uint32_t val)
 {
     int i;
-    uint64_t spi_sts, val = 0;
 
-    for (i = 0; i < LONG_MAX_RETRIES; i++) {
-        spi_sts = pnv_spi_tpm_read(chip, SPI_STS_REG);
-        if (GETFIELD(SPI_STS_RDR_FULL, spi_sts) == 1) {
-            val = pnv_spi_tpm_read(chip, SPI_RCV_DATA_REG);
-            break;
-        }
-        sleep(0.5);
+    for (i = 0; i < 4; i++) {
+        tpm_reg_writeb(c, locl, reg + i, ((val >> (8 * i)) & 0xff));
     }
-    for (i = 0; i < SHORT_MAX_RETRIES; i++) {
-        spi_sts = pnv_spi_tpm_read(chip, SPI_STS_REG);
-        if (GETFIELD(SPI_STS_RDR_FULL, spi_sts) == 1) {
-            sleep(0.1);
-        } else {
-            break;
-        }
+}
+
+static inline uint32_t tpm_reg_readl(const PnvChip *c, int locl, uint16_t reg)
+{
+    uint32_t val = 0;
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        val |= tpm_reg_readb(c, locl, reg + i) << (8 * i);
     }
-    /* SPI_STS_RDR_FULL bit should be reset after read */
-    g_assert_cmpuint(0, ==, GETFIELD(SPI_STS_RDR_FULL, spi_sts));
-    spi_op_complete(chip);
     return val;
+}
+
+static void test_spi_tpm_basic(const void *data)
+{
+    const PnvChip *chip = data;
+    uint32_t didvid, tpm_sts, en_int;
+    uint8_t access;
+
+    g_test_message("TPM TIS SPI interface basic tests:");
+    /* vendor ID and device ID ... check against the known value*/
+
+    didvid = tpm_reg_readl(chip, 0, TPM_TIS_REG_DID_VID);
+    g_assert_cmpint(didvid, ==, (1 << 16) | PCI_VENDOR_ID_IBM);
+    g_test_message("\tDID_VID = 0x%x, verified", didvid);
+
+    /* access register, default see TCG TIS Spec (v1.3) table-14 */
+    access = tpm_reg_readb(chip, 0, TPM_TIS_REG_ACCESS);
+    g_assert_cmpint(access, ==, TPM_TIS_ACCESS_TPM_REG_VALID_STS |
+                                TPM_TIS_ACCESS_TPM_ESTABLISHMENT);
+    g_test_message("\tACCESS REG = 0x%x, checked", access);
+
+    /* interrupt enable register, default see TCG TIS Spec (v1.3) table-19 */
+    en_int = tpm_reg_readl(chip, 0, TPM_TIS_REG_INT_ENABLE);
+    g_assert_cmpuint(en_int, ==, TPM_TIS_INT_POLARITY_LOW_LEVEL);
+    g_test_message("\tINT ENABLE REG: 0x%x, verified", en_int);
+
+    /* status register, default see TCG TIS Spec (v1.3) table-15 */
+    tpm_sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
+    /* for no active locality */
+    g_assert_cmpuint(tpm_sts, ==, 0xffffffff);
+    g_test_message("\tTPM STATUS: 0x%x, verified", tpm_sts);
 }
 
 static void tpm_set_verify_loc(const PnvChip *chip, uint8_t loc)
@@ -226,7 +252,7 @@ static void tpm_set_verify_loc(const PnvChip *chip, uint8_t loc)
     g_test_message("\tACCESS REG = 0x%x checked", access);
 
     /* test tpm status register */
-    tpm_sts = tpm_reg_readw(chip, loc, TPM_TIS_REG_STS);
+    tpm_sts = tpm_reg_readl(chip, loc, TPM_TIS_REG_STS);
     g_assert_cmpuint((tpm_sts & TPM_TIS_8BITS_MASK), ==, 0);
     g_test_message("\tTPM STATUS: 0x%x, verified", tpm_sts);
 
@@ -237,39 +263,6 @@ static void tpm_set_verify_loc(const PnvChip *chip, uint8_t loc)
     g_assert_cmpint(access, ==, TPM_TIS_ACCESS_TPM_REG_VALID_STS |
                                 TPM_TIS_ACCESS_TPM_ESTABLISHMENT);
     g_test_message("\tRELEASED ACCESS: 0x%x, checked", access);
-}
-
-static void test_spi_tpm_basic(const void *data)
-{
-    const PnvChip *chip = data;
-    uint32_t didvid, tpm_sts, en_int;
-    uint8_t access;
-
-    g_test_message("TPM TIS SPI interface basic tests:");
-    /* vendor ID and device ID ... check against the known value*/
-    spi_access_start(chip, true, 4, 0x83,
-                     SPI_TPM_TIS_ADDR | TPM_TIS_REG_DID_VID);
-    didvid = spi_read_reg(chip);
-    g_assert_cmpint((didvid >> 16), ==, bswap16(TPM_TIS_TPM_VID));
-    g_assert_cmpint((didvid & 0xffff), ==, bswap16(TPM_TIS_TPM_DID));
-    g_test_message("\tDID_VID = 0x%x, verified", didvid);
-
-    /* access register, default see TCG TIS Spec (v1.3) table-14 */
-    access = tpm_reg_readb(chip, 0, TPM_TIS_REG_ACCESS);
-    g_assert_cmpint(access, ==, TPM_TIS_ACCESS_TPM_REG_VALID_STS |
-                                TPM_TIS_ACCESS_TPM_ESTABLISHMENT);
-    g_test_message("\tACCESS REG = 0x%x, checked", access);
-
-    /* interrupt enable register, default see TCG TIS Spec (v1.3) table-19 */
-    en_int = tpm_reg_readw(chip, 0, TPM_TIS_REG_INT_ENABLE);
-    g_assert_cmpuint(en_int, ==, TPM_TIS_INT_POLARITY_LOW_LEVEL);
-    g_test_message("\tINT ENABLE REG: 0x%x, verified", en_int);
-
-    /* status register, default see TCG TIS Spec (v1.3) table-15 */
-    tpm_sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
-    /* for no active locality */
-    g_assert_cmpuint(tpm_sts, ==, 0xffffffff);
-    g_test_message("\tTPM STATUS: 0x%x, verified", tpm_sts);
 }
 
 static void test_spi_tpm_locality(const void *data)
@@ -582,7 +575,7 @@ static void test_spi_tpm_transmit_test(const void *data)
                                 TPM_TIS_ACCESS_ACTIVE_LOCALITY |
                                 TPM_TIS_ACCESS_TPM_ESTABLISHMENT);
 
-    sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
+    sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
     DPRINTF_STS;
 
     g_assert_cmpint(sts & 0xff, ==, 0);
@@ -591,15 +584,15 @@ static void test_spi_tpm_transmit_test(const void *data)
     g_test_message("\t\tbcount: %x, sts: %x", bcount, sts);
     g_assert_cmpint(bcount, >=, 128);
 
-    tpm_reg_writew(chip, 0, TPM_TIS_REG_STS, TPM_TIS_STS_COMMAND_READY);
-    sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
+    tpm_reg_writel(chip, 0, TPM_TIS_REG_STS, TPM_TIS_STS_COMMAND_READY);
+    sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
     DPRINTF_STS;
     g_assert_cmpint(sts & 0xff, ==, TPM_TIS_STS_COMMAND_READY);
 
     /* transmit command */
     for (i = 0; i < sizeof(TPM_CMD); i++) {
         tpm_reg_writeb(chip, 0, TPM_TIS_REG_DATA_FIFO, TPM_CMD[i]);
-        sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
+        sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
         DPRINTF_STS;
         if (i < sizeof(TPM_CMD) - 1) {
             g_assert_cmpint(sts & 0xff, ==, TPM_TIS_STS_EXPECT |
@@ -611,17 +604,17 @@ static void test_spi_tpm_transmit_test(const void *data)
     g_test_message("\ttransmit tests, check TPM_TIS_STS_EXPECT");
 
     /* start processing */
-    tpm_reg_writew(chip, 0, TPM_TIS_REG_STS, TPM_TIS_STS_TPM_GO);
+    tpm_reg_writel(chip, 0, TPM_TIS_REG_STS, TPM_TIS_STS_TPM_GO);
 
     uint64_t end_time = g_get_monotonic_time() + 50 * G_TIME_SPAN_SECOND;
     do {
-        sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
+        sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
         if ((sts & TPM_TIS_STS_DATA_AVAILABLE) != 0) {
             break;
         }
     } while (g_get_monotonic_time() < end_time);
 
-    sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
+    sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
     DPRINTF_STS;
     g_assert_cmpint(sts & 0xff, == , TPM_TIS_STS_VALID |
                                      TPM_TIS_STS_DATA_AVAILABLE);
@@ -635,7 +628,7 @@ static void test_spi_tpm_transmit_test(const void *data)
 
     for (i = 0; i < sizeof(tpm_msg); i++) {
         tpm_msg[i] = tpm_reg_readb(chip, 0, TPM_TIS_REG_DATA_FIFO);
-        sts = tpm_reg_readw(chip, 0, TPM_TIS_REG_STS);
+        sts = tpm_reg_readl(chip, 0, TPM_TIS_REG_STS);
         DPRINTF_STS;
         if (sts & TPM_TIS_STS_DATA_AVAILABLE) {
             g_assert_cmpint((sts >> 8) & 0xffff, ==, --bcount);
@@ -697,4 +690,3 @@ int main(int argc, char **argv)
     g_free(args);
     return ret;
 }
-
