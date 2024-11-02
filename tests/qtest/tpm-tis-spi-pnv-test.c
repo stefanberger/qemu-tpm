@@ -178,7 +178,7 @@ static inline void tpm_reg_writeb(const PnvChip *c,
 
 static inline uint8_t tpm_reg_readb(const PnvChip *c,
                                     uint8_t locty,
-                                    uint8_t reg)
+                                    uint16_t reg)
 {
     uint32_t tpm_reg_locty = SPI_TPM_TIS_ADDR |
                              (locty << TPM_TIS_LOCALITY_SHIFT);
@@ -207,15 +207,32 @@ static inline uint32_t tpm_reg_readl(const PnvChip *c,
     int i;
 
     /* special case for SPI xmit data reg set RWX bits */
+#if 0
     if (reg == TPM_TIS_REG_DID_VID) {
         spi_access_start(c, true, 4, TPM_READ_OP | SPI_EXTEND,
-                         locty | TPM_TIS_REG_DID_VID);
+                         (locty << TPM_TIS_LOCALITY_SHIFT)| TPM_TIS_REG_DID_VID);
         val = bswap32(spi_read_reg(c));
     } else {
+#endif
+#if 0
         for (i = 0; i < 4; i++) {
             val |= tpm_reg_readb(c, locty, reg + i) << (8 * i);
         }
+#else
+        spi_access_start(c, true, 4, TPM_READ_OP | SPI_EXTEND,
+                         (locty << TPM_TIS_LOCALITY_SHIFT)| reg);
+        val = bswap32(spi_read_reg(c));
+        fprintf(stderr, "val1=0x%08x  (reg=0x%08x)\n", val, reg);
+        val = 0;
+        for (i = 0; i < 4; i++) {
+            val |= tpm_reg_readb(c, locty, reg + i) << (8 * i);
+        }
+        fprintf(stderr, "val2=0x%08x\n", val);
+#endif
+
+#if 0
     }
+#endif
     return val;
 }
 
@@ -578,7 +595,8 @@ static void test_spi_tpm_access_release_test(const void *data)
  */
 static void test_spi_tpm_transmit_test(const void *data)
 {
-    const PnvChip *chip = data;
+    const PnvChip *chip = &pnv_chips[3];
+    const struct TPMTestState *s = data;
     uint16_t bcount;
     uint8_t access;
     uint32_t sts;
@@ -651,6 +669,7 @@ static void test_spi_tpm_transmit_test(const void *data)
             g_assert_cmpint((sts >> 8) & 0xffff, ==, --bcount);
         }
     }
+    g_assert_cmpmem(tpm_msg, sizeof(tpm_msg), s->tpm_msg, sizeof(*s->tpm_msg));
     g_test_message("\treceive tests, passed");
     /* relinquish use of locality 0 */
     tpm_reg_writeb(chip, 0, TPM_TIS_REG_ACCESS, TPM_TIS_ACCESS_ACTIVE_LOCALITY);
@@ -696,7 +715,7 @@ int main(int argc, char **argv)
     qtest_add_data_func("pnv-xscom/tpm-tis-spi/access_release_test",
                         &pnv_chips[3], test_spi_tpm_access_release_test);
     qtest_add_data_func("pnv-xscom/tpm-tis-spi/data_transmit_test",
-                        &pnv_chips[3], test_spi_tpm_transmit_test);
+                        &test, test_spi_tpm_transmit_test);
     ret = g_test_run();
 
     qtest_end();
