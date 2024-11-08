@@ -23,6 +23,7 @@ typedef struct TPMStateSPI {
 
     uint8_t     byte_offset;     /* byte offset in transfer */
     uint8_t     wait_state_cnt;  /* wait state counter */
+#define NUM_WAIT_STATES 1
     uint8_t     xfer_size;       /* data size of transfer */
     uint32_t    reg_addr;        /* register address of transfer */
 
@@ -236,9 +237,9 @@ static uint32_t tpm_tis_spi_transfer(SSIPeripheral *ss, uint32_t tx)
             trace_tpm_tis_spi_transfer_addr("reg_addr", spist->reg_addr);
             break;
         default:    /* data bytes */
-            if (spist->wait_state_cnt < 4) {
+            if (spist->wait_state_cnt < NUM_WAIT_STATES) {
                 spist->wait_state_cnt++;
-                if (spist->wait_state_cnt == 4) {
+                if (spist->wait_state_cnt == NUM_WAIT_STATES) {
                     trace_tpm_tis_spi_transfer_data("wait complete, count",
                                                      spist->wait_state_cnt);
                     rx = rx | (0x01 << (24 - offset * 8));
@@ -274,7 +275,8 @@ static uint32_t tpm_tis_spi_transfer(SSIPeripheral *ss, uint32_t tx)
             }
             break;
         }
-        if ((spist->wait_state_cnt == 0) || (spist->wait_state_cnt == 4)) {
+        if ((spist->wait_state_cnt == 0) ||
+            (spist->wait_state_cnt == NUM_WAIT_STATES)) {
             offset++;
             spist->byte_offset++;
         } else {
