@@ -18,7 +18,7 @@
 #include "migration/vmstate.h"
 #include "hw/qdev-core.h"
 #include "hw/acpi/tpm.h"
-#include "tpm_ppi.h"
+#include "hw/acpi/tpm_ppi.h"
 #include "trace.h"
 
 void tpm_ppi_reset(TPMPPI *tpmppi)

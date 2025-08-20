@@ -25,7 +25,7 @@
 #define TPM_TPM_TIS_H
 
 #include "system/tpm_backend.h"
-#include "tpm_ppi.h"
+#include "hw/acpi/tpm_ppi.h"
 
 #define TPM_TIS_NUM_LOCALITIES      5     /* per spec */
 #define TPM_TIS_LOCALITY_SHIFT      12

@@ -31,12 +31,12 @@
 #include "qemu/module.h"
 
 #include "hw/acpi/tpm.h"
+#include "hw/acpi/tpm_ppi.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/qdev-properties.h"
 #include "migration/vmstate.h"
 #include "system/tpm_backend.h"
 #include "system/tpm_util.h"
-#include "tpm_ppi.h"
 #include "trace.h"
 
 #include "tpm_tis.h"
