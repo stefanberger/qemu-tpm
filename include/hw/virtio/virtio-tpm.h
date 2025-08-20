@@ -4,6 +4,7 @@
 #include "hw/virtio/virtio.h"
 #include "system/tpm.h"
 #include "system/tpm_backend.h"
+#include "hw/acpi/tpm_ppi.h"
 
 #define TYPE_VIRTIO_TPM        "virtio-tpm-device"
 
@@ -22,6 +23,7 @@ struct TPMVirtioState {
     VirtQueue *vq;
 
     bool ppi_enabled;
+    TPMPPI ppi;
 };
 typedef struct TPMVirtioState TPMVirtioState;
 

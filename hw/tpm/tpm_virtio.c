@@ -15,13 +15,18 @@
  */
 
 #include "qemu/osdep.h"
+#include CONFIG_DEVICES /* CONFIG_ACPI */
+
 #include "qemu/module.h"
 #include "hw/pci/pci_ids.h"
 #include "system/reset.h"
 #include "system/runstate.h"
 #include "system/tpm_util.h"
+#include "system/address-spaces.h"
 #include "tpm_prop.h"
 #include "qom/object.h"
+#include "hw/acpi/tpm.h"
+#include "hw/acpi/tpm_ppi.h"
 #include "hw/virtio/virtio.h"
 #include "hw/virtio/virtio-tpm.h"
 #include "standard-headers/linux/virtio_tpm.h"
@@ -189,13 +194,19 @@ static const VMStateDescription vmstate_tpm_virtio = {
 
 static const Property tpm_virtio_properties[] = {
     DEFINE_PROP_TPMBE("tpmdev", TPMVirtioState, tpmbe),
-    DEFINE_PROP_BOOL("ppi", TPMVirtioState, ppi_enabled, false),
+    DEFINE_PROP_BOOL("ppi", TPMVirtioState, ppi_enabled, true),
 };
 
 static void tpm_virtio_reset(void *opaque)
 {
     VirtIODevice *dev = opaque;
     TPMVirtioState *s = TPM_VIRTIO(dev);
+
+#if defined(CONFIG_ACPI) && CONFIG_ACPI
+    if (s->ppi_enabled) {
+        tpm_ppi_reset(&s->ppi);
+    }
+#endif
 
     tpm_backend_reset(s->tpmbe);
 
@@ -238,6 +249,13 @@ static void tpm_virtio_realize(DeviceState *dev, Error **errp)
     virtio_init(vdev, VIRTIO_ID_TPM, config_size);
 
     s->vq = virtio_add_queue(vdev, 4, tpm_virtio_tpm_send);
+
+#if defined(CONFIG_ACPI) && CONFIG_ACPI
+    if (s->ppi_enabled) {
+        tpm_ppi_init(&s->ppi, get_system_memory(),
+                     TPM_PPI_ADDR_BASE, OBJECT(s));
+    }
+#endif
 }
 
 static void tpm_virtio_unrealize(DeviceState *dev)
