@@ -5,5 +5,7 @@ system_ss.add(when: 'CONFIG_TPM_TIS_I2C', if_true: files('tpm_tis_i2c.c'))
 system_ss.add(when: 'CONFIG_TPM_CRB', if_true: files('tpm_crb.c'))
 system_ss.add(when: 'CONFIG_TPM_TIS', if_true: files('tpm_ppi.c'))
 system_ss.add(when: 'CONFIG_TPM_CRB', if_true: files('tpm_ppi.c'))
+system_ss.add(when: 'CONFIG_TPM_VIRTIO', if_true: files('tpm_virtio.c'))
+system_ss.add(when: 'CONFIG_TPM_VIRTIO_PCI', if_true: files('tpm_virtio_pci.c'))
 
 specific_ss.add(when: 'CONFIG_TPM_SPAPR', if_true: files('tpm_spapr.c'))

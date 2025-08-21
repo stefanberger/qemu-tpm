@@ -190,6 +190,7 @@ REG32(CRB_DATA_BUFFER, 0x80)
 #define TPM2_ACPI_CLASS_CLIENT      0
 #define TPM2_ACPI_CLASS_SERVER      1
 
+#define TPM2_START_METHOD_VIRTIO    1 /* vendor specific */
 #define TPM2_START_METHOD_MMIO      6
 #define TPM2_START_METHOD_CRB       7
 

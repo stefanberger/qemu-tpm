@@ -30,3 +30,15 @@ config TPM_SPAPR
     default y
     depends on TPM && PSERIES
     select TPM_BACKEND
+
+config TPM_VIRTIO
+    bool
+    default y
+    depends on TPM
+    select TPM_BACKEND
+
+config TPM_VIRTIO_PCI
+    bool
+    default y
+    depends on TPM && VIRTIO_PCI
+    select TPM_BACKEND

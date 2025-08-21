@@ -27,6 +27,7 @@
 #include "system/numa.h"
 #include "hw/boards.h"
 #include "hw/acpi/tpm.h"
+#include "hw/virtio/virtio-tpm.h"
 #include "hw/pci/pci_host.h"
 #include "hw/pci/pci_bus.h"
 #include "hw/pci/pci_bridge.h"
@@ -2398,6 +2399,9 @@ void build_tpm2(GArray *table_data, BIOSLinker *linker, GArray *tcpalog,
     } else if (TPM_IS_CRB(tpmif)) {
         control_area_start_address = TPM_CRB_ADDR_CTRL;
         start_method = TPM2_START_METHOD_CRB;
+    } else if (TPM_IS_VIRTIO(tpmif)) {
+        control_area_start_address = 0;
+        start_method = TPM2_START_METHOD_VIRTIO;
     } else {
         g_assert_not_reached();
     }

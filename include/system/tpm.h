@@ -60,6 +60,8 @@ struct TPMIfClass {
     object_dynamic_cast(OBJECT(chr), TYPE_TPM_SPAPR)
 #define TPM_IS_TIS_I2C(chr)                      \
     object_dynamic_cast(OBJECT(chr), TYPE_TPM_TIS_I2C)
+#define TPM_IS_VIRTIO(chr)                          \
+    object_dynamic_cast(OBJECT(chr), TYPE_VIRTIO_TPM)
 
 /* returns NULL unless there is exactly one TPM device */
 static inline TPMIf *tpm_find(void)

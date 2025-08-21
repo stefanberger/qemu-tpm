@@ -194,7 +194,8 @@ const char *virtio_device_names[] = {
     [VIRTIO_ID_PARAM_SERV] = "virtio-param-serv",
     [VIRTIO_ID_AUDIO_POLICY] = "virtio-audio-pol",
     [VIRTIO_ID_BT] = "virtio-bluetooth",
-    [VIRTIO_ID_GPIO] = "virtio-gpio"
+    [VIRTIO_ID_GPIO] = "virtio-gpio",
+    [VIRTIO_ID_TPM] = "virtio-tpm"
 };
 
 static const char *virtio_id_to_name(uint16_t device_id)
@@ -3541,6 +3542,7 @@ bool virtio_legacy_allowed(VirtIODevice *vdev)
     case VIRTIO_ID_9P:
     case VIRTIO_ID_RPROC_SERIAL:
     case VIRTIO_ID_CAIF:
+    case VIRTIO_ID_TPM:
         return true;
     default:
         return false;
