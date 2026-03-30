@@ -36,6 +36,14 @@ static void tpm_tis_i2c_swtpm_test(const void *data)
                         ts->ifmodel, ts->machine_options);
 }
 
+static void tpm_tis_i2c_large_tx_swtpm_test(const void *data)
+{
+    const TestState *ts = data;
+
+    tpm_test_swtpm_large_tx_test(ts->src_tpm_path, tpm_tis_i2c_transfer,
+                                 ts->ifmodel, ts->machine_options);
+}
+
 static void tpm_tis_swtpm_migration_test(const void *data)
 {
     const TestState *ts = data;
@@ -67,6 +75,8 @@ int main(int argc, char **argv)
     aspeed_bus_addr = ast2600_i2c_calc_bus_addr(I2C_DEV_BUS_NUM);
 
     qtest_add_data_func("/tpm/tis-i2c-swtpm/test", &ts, tpm_tis_i2c_swtpm_test);
+    qtest_add_data_func("/tpm/tis-i2c-large-tx-swtpm/test", &ts,
+                        tpm_tis_i2c_large_tx_swtpm_test);
     qtest_add_data_func("/tpm/tis-i2c-swtpm-migration/test", &ts,
                         tpm_tis_swtpm_migration_test);
     ret = g_test_run();
