@@ -33,6 +33,7 @@
 #include "hw/acpi/tpm.h"
 #include "hw/pci/pci_ids.h"
 #include "hw/core/qdev-properties.h"
+#include "migration/blocker.h"
 #include "migration/vmstate.h"
 #include "system/tpm_backend.h"
 #include "system/tpm_util.h"
@@ -676,6 +677,7 @@ static void tpm_tis_mmio_write(void *opaque, hwaddr addr,
 
             case TPM_TIS_STATE_COMPLETION:
                 s->rw_offset = 0;
+
                 /* shortcut to ready state with C/R set */
                 s->loc[locty].state = TPM_TIS_STATE_READY;
                 if (!(s->loc[locty].sts & TPM_TIS_STS_COMMAND_READY)) {
@@ -815,11 +817,16 @@ enum TPMVersion tpm_tis_get_tpm_version(TPMState *s)
  */
 void tpm_tis_reset(TPMState *s, bool ppi_enabled)
 {
+    size_t limit = TPM_TIS_BUFFER_MAX;
     int c;
 
     s->be_tpm_version = tpm_backend_get_tpm_version(s->be_driver);
+
+    if (!s->allow_ext_buffer) {
+        limit = 4096;
+    }
     s->be_buffer_size = MIN(tpm_backend_get_buffer_size(s->be_driver),
-                            TPM_TIS_BUFFER_MAX);
+                            limit);
 
     if (ppi_enabled) {
         tpm_ppi_reset(&s->ppi);
@@ -889,4 +896,28 @@ const VMStateDescription vmstate_locty = {
         VMSTATE_END_OF_LIST(),
     }
 };
+
+bool tpm_tis_ext_buffer_migration_needed(struct TPMState *s)
+{
+    if (!TPM_TIS_IS_VALID_LOCTY(s->active_locty)) {
+        return false;
+    }
+
+    switch (s->loc[s->active_locty].state) {
+    case TPM_TIS_STATE_IDLE:
+    case TPM_TIS_STATE_READY:
+        return false;
+    case TPM_TIS_STATE_RECEPTION:
+        return s->rw_offset >= 4096;
+    case TPM_TIS_STATE_EXECUTION:
+        /*
+         * TPM is executing: we cannot know the size of TPM response.
+         * .pre_save must have been called before (should never get here).
+         */
+        return false;
+    case TPM_TIS_STATE_COMPLETION:
+        return (tpm_cmd_get_size(&s->buffer) >= 4096);
+    }
+    return false;
+}
 

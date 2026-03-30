@@ -33,7 +33,7 @@
 
 #define TPM_TIS_IS_VALID_LOCTY(x)   ((x) < TPM_TIS_NUM_LOCALITIES)
 
-#define TPM_TIS_BUFFER_MAX          4096
+#define TPM_TIS_BUFFER_MAX          8192
 
 typedef enum {
     TPM_TIS_STATE_IDLE = 0,
@@ -54,10 +54,13 @@ typedef struct TPMLocality {
 } TPMLocality;
 
 typedef struct TPMState {
+    const char *devname;
+
     MemoryRegion mmio;
 
     unsigned char buffer[TPM_TIS_BUFFER_MAX];
     uint16_t rw_offset;
+    bool allow_ext_buffer;
 
     uint8_t active_locty;
     uint8_t aborting_locty;
@@ -88,5 +91,12 @@ void tpm_tis_request_completed(TPMState *s, int ret);
 uint32_t tpm_tis_read_data(TPMState *s, hwaddr addr, unsigned size);
 void tpm_tis_write_data(TPMState *s, hwaddr addr, uint64_t val, uint32_t size);
 uint16_t tpm_tis_get_checksum(TPMState *s);
+
+bool tpm_tis_ext_buffer_migration_needed(struct TPMState *s);
+void tpm_tis_unset_migration_blocker(struct TPMState *s);
+
+#define MIGRATION_BLOCKER_MESSAGE \
+   "The %s device does not support extended buffer migration with " \
+   "machine version less than 11.1"
 
 #endif /* TPM_TPM_TIS_H */
