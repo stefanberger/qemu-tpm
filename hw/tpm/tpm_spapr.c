@@ -64,7 +64,7 @@ typedef struct TpmCrq {
 #define SPAPR_VTPM_ERR_COPY_IN_FAILED        0x3
 #define SPAPR_VTPM_ERR_COPY_OUT_FAILED       0x4
 
-#define TPM_SPAPR_BUFFER_MAX                 4096
+#define TPM_SPAPR_BUFFER_MAX                 8192
 
 struct SpaprTpmState {
     SpaprVioDevice vdev;
@@ -86,6 +86,7 @@ struct SpaprTpmState {
     TPMVersion be_tpm_version;
 
     size_t be_buffer_size;
+    bool allow_ext_buffer;
 };
 
 /*
@@ -293,14 +294,18 @@ static const char *tpm_spapr_get_dt_compatible(SpaprVioDevice *dev)
 static void tpm_spapr_reset(SpaprVioDevice *dev)
 {
     SpaprTpmState *s = VIO_SPAPR_VTPM(dev);
+    size_t limit = TPM_SPAPR_BUFFER_MAX;
 
     s->state = SPAPR_VTPM_STATE_NONE;
     s->numbytes = 0;
 
     s->be_tpm_version = tpm_backend_get_tpm_version(s->be_driver);
 
+    if (!s->allow_ext_buffer) {
+        limit = 4096;
+    }
     s->be_buffer_size = MIN(tpm_backend_get_buffer_size(s->be_driver),
-                            TPM_SPAPR_BUFFER_MAX);
+                            limit);
 
     tpm_backend_reset(s->be_driver);
 
@@ -367,6 +372,8 @@ static const VMStateDescription vmstate_spapr_vtpm = {
 static const Property tpm_spapr_properties[] = {
     DEFINE_SPAPR_PROPERTIES(SpaprTpmState, vdev),
     DEFINE_PROP_TPMBE("tpmdev", SpaprTpmState, be_driver),
+    DEFINE_PROP_BOOL("x-allow-ext-buffer", SpaprTpmState,
+                     allow_ext_buffer, true),
 };
 
 static void tpm_spapr_realizefn(SpaprVioDevice *dev, Error **errp)

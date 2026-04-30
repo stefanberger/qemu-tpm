@@ -51,6 +51,7 @@ GlobalProperty hw_compat_11_0[] = {
     { "tpm-tis", "x-allow-ext-buffer", "off" },// FIXME: Move these to hw_compat_11_xyz
     { "tpm-tis-i2c", "x-allow-ext-buffer", "off" },
     { "tpm-tis-device", "x-allow-ext-buffer", "off" },
+    { "tpm-spapr", "x-allow-ext-buffer", "off" },
 };
 const size_t hw_compat_11_0_len = G_N_ELEMENTS(hw_compat_11_0);
 
