@@ -16,6 +16,7 @@
 
 #include "qemu/osdep.h"
 
+#include "qemu/memalign.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
@@ -529,6 +530,8 @@ static void tpm_crb_unrealize(DeviceState *dev)
     if (s->migration_blocker) {
         migrate_del_blocker(&s->migration_blocker);
     }
+
+    qemu_vfree(s->ppi.buf);
 }
 
 static void tpm_crb_class_init(ObjectClass *klass, const void *data)
